@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import app from "./app.js";
+import { adminBootstrapService } from "./config/container.js";
 import { connectDatabase } from "./config/database.js";
 
 const PORT = Number(process.env.PORT) || 5000;
@@ -8,6 +9,7 @@ const PORT = Number(process.env.PORT) || 5000;
 const startServer = async (): Promise<void> => {
     try {
         await connectDatabase();
+        await adminBootstrapService.ensureDefaultAdmin();
 
         app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
