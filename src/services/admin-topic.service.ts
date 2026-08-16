@@ -3,6 +3,7 @@ import { mapTopicToResponse } from "../mappers/topic.mapper.js";
 import type { ILessonRepository } from "../repositories/interfaces/lesson.repository.interface.js";
 import type { ISectionRepository } from "../repositories/interfaces/section.repository.interface.js";
 import type { ITopicRepository } from "../repositories/interfaces/topic.repository.interface.js";
+import type { IVocabularyRepository } from "../repositories/interfaces/vocabulary.repository.interface.js";
 import type {
     CreateTopicInput,
     TopicResponse,
@@ -15,7 +16,7 @@ export class AdminTopicService {
         private readonly sectionRepository: ISectionRepository,
         private readonly topicRepository: ITopicRepository,
         private readonly lessonRepository: ILessonRepository,
-        // private readonly vocabularyRepository: IVocabularyRepository, // Not implemented yet
+        private readonly vocabularyRepository: IVocabularyRepository,
     ) {}
 
     async getTopicsBySection(sectionId: string): Promise<TopicResponse[]> {
@@ -114,7 +115,10 @@ export class AdminTopicService {
             throw new AppError("TOPIC_HAS_LESSONS", "Không thể xóa chủ đề vì chủ đề đang chứa màn học", 409);
         }
 
-        // if vocabulary check was implemented, it would be here
+        const vocabularyCount = await this.vocabularyRepository.countByTopicId(topicId);
+        if (vocabularyCount > 0) {
+            throw new AppError("TOPIC_HAS_VOCABULARIES", "Không thể xóa chủ đề vì chủ đề đang chứa từ vựng", 409);
+        }
 
         await this.topicRepository.deleteById(topicId);
     }

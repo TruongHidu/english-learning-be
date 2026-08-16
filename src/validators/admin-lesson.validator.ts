@@ -35,7 +35,7 @@ export const createLessonSchema = z.object({
     questionCount: z
         .number()
         .int("Số câu hỏi phải là số nguyên")
-        .min(1, "Phải có ít nhất 1 câu hỏi")
+        .min(0, "Số câu hỏi không được âm")
         .max(100, "Tối đa 100 câu hỏi")
         .optional(),
     xpReward: z
@@ -77,9 +77,10 @@ export const updateLessonSchema = z.object({
     questionCount: z
         .number()
         .int("Số câu hỏi phải là số nguyên")
-        .min(1, "Phải có ít nhất 1 câu hỏi")
+        .min(0, "Số câu hỏi không được âm")
         .max(100, "Tối đa 100 câu hỏi")
         .optional(),
+
     xpReward: z
         .number()
         .int("XP thưởng phải là số nguyên")

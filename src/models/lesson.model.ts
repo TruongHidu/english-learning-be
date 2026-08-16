@@ -52,10 +52,11 @@ const lessonSchema = new Schema<LessonPersistence>(
         questionCount: {
             type: Number,
             required: true,
-            min: 1,
+            min: 0,
             max: 100,
             default: 10,
         },
+
         xpReward: {
             type: Number,
             required: true,

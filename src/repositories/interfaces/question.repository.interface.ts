@@ -1,0 +1,21 @@
+import type { QuestionDocument } from "../../models/question.model.js";
+import type {
+    CreateQuestionInput,
+    QuestionListQuery,
+    QuestionStatus,
+    UpdateQuestionInput,
+} from "../../types/question.types.js";
+
+export interface IQuestionRepository {
+    findById(id: string): Promise<QuestionDocument | null>;
+    findAll(
+        query: QuestionListQuery,
+    ): Promise<{ questions: QuestionDocument[]; total: number }>;
+    create(data: CreateQuestionInput): Promise<QuestionDocument>;
+    update(id: string, data: UpdateQuestionInput): Promise<QuestionDocument | null>;
+    updateStatus(id: string, status: QuestionStatus): Promise<QuestionDocument | null>;
+    deleteById(id: string): Promise<void>;
+    countByVocabularyId(vocabularyId: string): Promise<number>;
+    existsByIds(ids: string[]): Promise<boolean>;
+    findByIds(ids: string[]): Promise<QuestionDocument[]>;
+}

@@ -7,6 +7,8 @@ import adminCourseRouter from "./routes/admin-course.routes.js";
 import adminSectionRouter from "./routes/admin-section.routes.js";
 import adminTopicRouter from "./routes/admin-topic.routes.js";
 import adminLessonRouter from "./routes/admin-lesson.routes.js";
+import adminVocabularyRouter from "./routes/admin-vocabulary.routes.js";
+import adminQuestionRouter from "./routes/admin-question.routes.js";
 import authRouter from "./routes/auth.routes.js";
 import courseRouter from "./routes/course.routes.js";
 import userRouter from "./routes/user.routes.js";
@@ -38,7 +40,10 @@ app.use("/api/v1/admin/courses", adminCourseRouter);
 app.use("/api/v1/admin/sections", adminSectionRouter);
 app.use("/api/v1/admin", adminTopicRouter);
 app.use("/api/v1/admin", adminLessonRouter);
+app.use("/api/v1/admin", adminVocabularyRouter);
+app.use("/api/v1/admin", adminQuestionRouter);
 
 app.use(errorHandler);
 
 export default app;
+
