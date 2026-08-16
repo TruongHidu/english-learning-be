@@ -51,7 +51,9 @@ const matchingPairInputSchema = z.object({
 export const createQuestionSchema = z
     .object({
         vocabularyId: z.string().regex(OBJECT_ID_REGEX, "ID từ vựng không hợp lệ").optional().nullable(),
+        vocabularyIds: z.array(z.string().regex(OBJECT_ID_REGEX, "ID từ vựng không hợp lệ")).optional().nullable(),
         type: z.enum(QUESTION_TYPES, { error: "Loại câu hỏi không hợp lệ" }),
+
         content: z
             .string({ error: "Nội dung câu hỏi là bắt buộc" })
             .trim()
@@ -119,7 +121,9 @@ export const createQuestionSchema = z
 export const updateQuestionSchema = z
     .object({
         vocabularyId: z.string().regex(OBJECT_ID_REGEX, "ID từ vựng không hợp lệ").optional().nullable(),
+        vocabularyIds: z.array(z.string().regex(OBJECT_ID_REGEX, "ID từ vựng không hợp lệ")).optional().nullable(),
         type: z.enum(QUESTION_TYPES).optional(),
+
         content: z.string().trim().min(1, "Nội dung câu hỏi không được để trống").max(2000, "Nội dung câu hỏi không được vượt quá 2000 ký tự").optional(),
         instruction: z.string().trim().max(500, "Hướng dẫn không được vượt quá 500 ký tự").optional().nullable(),
         correctAnswer: z.unknown().optional().nullable(),

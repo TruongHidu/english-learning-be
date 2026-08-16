@@ -51,9 +51,17 @@ export interface MatchingPairInput {
     orderIndex: number;
 }
 
+export interface LinkedVocabularyItem {
+    id: string;
+    word: string;
+    meaning: string;
+}
+
 export interface QuestionResponse {
     id: string;
     vocabularyId: string | null;
+    vocabularyIds: string[] | null;
+    vocabularies?: LinkedVocabularyItem[] | null;
     type: QuestionType;
     content: string;
     instruction: string | null;
@@ -74,6 +82,8 @@ export interface QuestionResponse {
 export interface QuestionListItemResponse {
     id: string;
     vocabularyId: string | null;
+    vocabularyIds: string[] | null;
+    vocabularies?: LinkedVocabularyItem[] | null;
     type: QuestionType;
     content: string;
     difficulty: VocabularyDifficulty;
@@ -85,6 +95,7 @@ export interface QuestionListItemResponse {
 
 export interface CreateQuestionInput {
     vocabularyId?: string | null;
+    vocabularyIds?: string[] | null;
     type: QuestionType;
     content: string;
     instruction?: string | null;
@@ -99,6 +110,7 @@ export interface CreateQuestionInput {
 
 export interface UpdateQuestionInput {
     vocabularyId?: string | null;
+    vocabularyIds?: string[] | null;
     type?: QuestionType;
     content?: string;
     instruction?: string | null;
@@ -110,6 +122,7 @@ export interface UpdateQuestionInput {
     audioUrl?: string | null;
     imageUrl?: string | null;
 }
+
 
 export interface QuestionListQuery {
     page?: number;

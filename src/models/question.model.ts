@@ -24,7 +24,9 @@ export interface MatchingPairPersistence {
 
 export interface QuestionPersistence {
     vocabularyId?: Types.ObjectId;
+    vocabularyIds?: Types.ObjectId[];
     type: QuestionType;
+
     content: string;
     instruction?: string;
     correctAnswer?: unknown;
@@ -71,6 +73,12 @@ const questionSchema = new Schema<QuestionPersistence>(
             required: false,
             index: true,
         },
+        vocabularyIds: {
+            type: [{ type: Schema.Types.ObjectId, ref: "Vocabulary" }],
+            required: false,
+            default: undefined,
+        },
+
         type: {
             type: String,
             enum: QUESTION_TYPES,

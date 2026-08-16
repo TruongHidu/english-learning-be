@@ -27,9 +27,27 @@ export const mapQuestionToResponse = (doc: QuestionDocument): QuestionResponse =
           }))
         : null;
 
+    const vocabularyIds: string[] | null = doc.vocabularyIds && doc.vocabularyIds.length > 0
+        ? doc.vocabularyIds.map((vId) => vId.toString())
+        : (doc.vocabularyId ? [doc.vocabularyId.toString()] : null);
+
+    const vocabularies = doc.populated("vocabularyIds") || doc.populated("vocabularyId")
+        ? ((doc.vocabularyIds && doc.vocabularyIds.length > 0 ? doc.vocabularyIds : [doc.vocabularyId])
+            .map((v: unknown) => {
+                if (v && typeof v === "object" && "word" in v) {
+                    const item = v as { _id: { toString(): string }; word: string; meaning: string };
+                    return { id: item._id.toString(), word: item.word, meaning: item.meaning };
+                }
+                return null;
+            })
+            .filter(Boolean) as Array<{ id: string; word: string; meaning: string }>)
+        : null;
+
     return {
         id: doc._id.toString(),
         vocabularyId: doc.vocabularyId ? doc.vocabularyId.toString() : null,
+        vocabularyIds,
+        vocabularies,
         type: doc.type,
         content: doc.content,
         instruction: doc.instruction ?? null,
@@ -49,9 +67,27 @@ export const mapQuestionToResponse = (doc: QuestionDocument): QuestionResponse =
 };
 
 export const mapQuestionToListItemResponse = (doc: QuestionDocument): QuestionListItemResponse => {
+    const vocabularyIds: string[] | null = doc.vocabularyIds && doc.vocabularyIds.length > 0
+        ? doc.vocabularyIds.map((vId) => vId.toString())
+        : (doc.vocabularyId ? [doc.vocabularyId.toString()] : null);
+
+    const vocabularies = doc.populated("vocabularyIds") || doc.populated("vocabularyId")
+        ? ((doc.vocabularyIds && doc.vocabularyIds.length > 0 ? doc.vocabularyIds : [doc.vocabularyId])
+            .map((v: unknown) => {
+                if (v && typeof v === "object" && "word" in v) {
+                    const item = v as { _id: { toString(): string }; word: string; meaning: string };
+                    return { id: item._id.toString(), word: item.word, meaning: item.meaning };
+                }
+                return null;
+            })
+            .filter(Boolean) as Array<{ id: string; word: string; meaning: string }>)
+        : null;
+
     return {
         id: doc._id.toString(),
         vocabularyId: doc.vocabularyId ? doc.vocabularyId.toString() : null,
+        vocabularyIds,
+        vocabularies,
         type: doc.type,
         content: doc.content,
         difficulty: doc.difficulty,
@@ -61,3 +97,4 @@ export const mapQuestionToListItemResponse = (doc: QuestionDocument): QuestionLi
         updatedAt: doc.updatedAt,
     };
 };
+

@@ -19,7 +19,7 @@ import { buildVietnameseRegex } from "../../utils/vietnamese.utils.js";
 
 export class QuestionRepository implements IQuestionRepository {
     public async findById(id: string): Promise<QuestionDocument | null> {
-        return QuestionModel.findById(id).exec();
+        return QuestionModel.findById(id).populate("vocabularyIds vocabularyId", "word meaning").exec();
     }
 
     public async findAll(
@@ -28,7 +28,10 @@ export class QuestionRepository implements IQuestionRepository {
         const filter: Record<string, unknown> = {};
 
         if (query.vocabularyId) {
-            filter.vocabularyId = query.vocabularyId;
+            filter.$or = [
+                { vocabularyId: query.vocabularyId },
+                { vocabularyIds: query.vocabularyId },
+            ];
         }
 
         if (query.type) {
@@ -54,7 +57,6 @@ export class QuestionRepository implements IQuestionRepository {
             }
         }
 
-
         const page = Math.max(1, query.page ?? 1);
         const limit = Math.min(100, Math.max(1, query.limit ?? 20));
         const skip = (page - 1) * limit;
@@ -64,6 +66,7 @@ export class QuestionRepository implements IQuestionRepository {
 
         const [questions, total] = await Promise.all([
             QuestionModel.find(filter)
+                .populate("vocabularyIds vocabularyId", "word meaning")
                 .sort({ [sortBy]: sortOrder })
                 .skip(skip)
                 .limit(limit)
@@ -93,8 +96,17 @@ export class QuestionRepository implements IQuestionRepository {
               }))
             : undefined;
 
-        return QuestionModel.create({
-            vocabularyId: data.vocabularyId ? new Types.ObjectId(data.vocabularyId) : undefined,
+        const vIds = data.vocabularyIds && data.vocabularyIds.length > 0
+            ? data.vocabularyIds.map((id) => new Types.ObjectId(id))
+            : (data.vocabularyId ? [new Types.ObjectId(data.vocabularyId)] : undefined);
+
+        const primaryVId = data.vocabularyId
+            ? new Types.ObjectId(data.vocabularyId)
+            : (vIds && vIds.length > 0 ? vIds[0] : undefined);
+
+        const created = await QuestionModel.create({
+            vocabularyId: primaryVId,
+            vocabularyIds: vIds,
             type: data.type,
             content: data.content.trim(),
             instruction: data.instruction?.trim() || undefined,
@@ -108,6 +120,8 @@ export class QuestionRepository implements IQuestionRepository {
             status: "DRAFT",
             createdByAi: false,
         });
+
+        return (await QuestionModel.findById(created._id).populate("vocabularyIds vocabularyId", "word meaning").exec())!;
     }
 
     public async update(
@@ -116,9 +130,18 @@ export class QuestionRepository implements IQuestionRepository {
     ): Promise<QuestionDocument | null> {
         const updatePayload: Partial<QuestionPersistence> = {};
 
+        if (data.vocabularyIds !== undefined) {
+            updatePayload.vocabularyIds = data.vocabularyIds
+                ? data.vocabularyIds.map((vId) => new Types.ObjectId(vId))
+                : undefined;
+            if (data.vocabularyIds && data.vocabularyIds.length > 0) {
+                updatePayload.vocabularyId = new Types.ObjectId(data.vocabularyIds[0]);
+            }
+        }
         if (data.vocabularyId !== undefined) {
             updatePayload.vocabularyId = data.vocabularyId ? new Types.ObjectId(data.vocabularyId) : undefined;
         }
+
         if (data.type !== undefined) updatePayload.type = data.type;
         if (data.content !== undefined) updatePayload.content = data.content.trim();
         if (data.instruction !== undefined) updatePayload.instruction = data.instruction?.trim() || undefined;
@@ -154,7 +177,7 @@ export class QuestionRepository implements IQuestionRepository {
             id,
             { $set: updatePayload },
             { new: true, runValidators: true },
-        ).exec();
+        ).populate("vocabularyIds vocabularyId", "word meaning").exec();
     }
 
     public async updateStatus(
@@ -165,7 +188,7 @@ export class QuestionRepository implements IQuestionRepository {
             id,
             { $set: { status } },
             { new: true, runValidators: true },
-        ).exec();
+        ).populate("vocabularyIds vocabularyId", "word meaning").exec();
     }
 
     public async deleteById(id: string): Promise<void> {
@@ -173,7 +196,12 @@ export class QuestionRepository implements IQuestionRepository {
     }
 
     public async countByVocabularyId(vocabularyId: string): Promise<number> {
-        return QuestionModel.countDocuments({ vocabularyId }).exec();
+        return QuestionModel.countDocuments({
+            $or: [
+                { vocabularyId },
+                { vocabularyIds: vocabularyId },
+            ],
+        }).exec();
     }
 
     public async existsByIds(ids: string[]): Promise<boolean> {
@@ -183,6 +211,7 @@ export class QuestionRepository implements IQuestionRepository {
     }
 
     public async findByIds(ids: string[]): Promise<QuestionDocument[]> {
-        return QuestionModel.find({ _id: { $in: ids } }).exec();
+        return QuestionModel.find({ _id: { $in: ids } }).populate("vocabularyIds vocabularyId", "word meaning").exec();
     }
 }
+
