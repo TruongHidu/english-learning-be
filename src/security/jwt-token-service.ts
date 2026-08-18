@@ -4,16 +4,20 @@ import { USER_ROLES, type JwtPayload, type UserRole } from "../types/auth.types.
 import type { ITokenService } from "./token-service.interface.js";
 
 export class JwtTokenService implements ITokenService {
-    private readonly secret: string;
+    private readonly providedSecret?: string;
     private readonly expiresIn: SignOptions["expiresIn"];
 
-    constructor(secret = process.env.JWT_SECRET, expiresIn = process.env.JWT_EXPIRES_IN ?? "7d") {
-        if (!secret) {
-            throw new Error("JWT_SECRET is not defined");
-        }
+    constructor(secret?: string, expiresIn = process.env.JWT_EXPIRES_IN ?? "7d") {
+        this.providedSecret = secret;
+        this.expiresIn = (expiresIn || "7d") as SignOptions["expiresIn"];
+    }
 
-        this.secret = secret;
-        this.expiresIn = expiresIn as SignOptions["expiresIn"];
+    private get secret(): string {
+        const secretKey = this.providedSecret || process.env.JWT_SECRET;
+        if (!secretKey) {
+            throw new Error("JWT_SECRET is not defined in environment variables");
+        }
+        return secretKey;
     }
 
     generateAccessToken(userId: string, role: UserRole): string {
@@ -38,3 +42,4 @@ export class JwtTokenService implements ITokenService {
         return { sub: decoded.sub, role: decoded.role as UserRole };
     }
 }
+
