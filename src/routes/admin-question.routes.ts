@@ -22,6 +22,11 @@ import {
     updateQuestionStatusSchema,
 } from "../validators/admin-question.validator.js";
 import { topicIdParamSchema } from "../validators/admin-topic.validator.js";
+import {
+    parseQuestionMultipartPayload,
+    requireListeningAudioOnCreate,
+    uploadQuestionMedia,
+} from "../middlewares/question-media-upload.middleware.js";
 
 const adminQuestionRouter = Router();
 
@@ -36,7 +41,10 @@ adminQuestionRouter.get(
 
 adminQuestionRouter.post(
     "/questions",
+    uploadQuestionMedia,
+    parseQuestionMultipartPayload,
     validate(createQuestionSchema),
+    requireListeningAudioOnCreate,
     adminQuestionController.create,
 );
 
@@ -56,6 +64,8 @@ adminQuestionRouter.get(
 adminQuestionRouter.patch(
     "/questions/:questionId",
     validateParams(questionIdParamSchema),
+    uploadQuestionMedia,
+    parseQuestionMultipartPayload,
     validate(updateQuestionSchema),
     adminQuestionController.update,
 );

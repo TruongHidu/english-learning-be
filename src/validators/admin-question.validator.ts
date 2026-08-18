@@ -107,14 +107,6 @@ export const createQuestionSchema = z
                     message: "Đáp án đúng là bắt buộc cho loại câu hỏi này",
                 });
             }
-        } else if (data.type === "LISTENING") {
-            if (!data.audioUrl) {
-                ctx.addIssue({
-                    code: z.ZodIssueCode.custom,
-                    path: ["audioUrl"],
-                    message: "File âm thanh audioUrl là bắt buộc cho câu hỏi nghe LISTENING",
-                });
-            }
         }
     });
 

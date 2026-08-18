@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import type { AdminQuestionService } from "../services/admin-question.service.js";
 import type { QuestionListQuery } from "../types/question.types.js";
+import { getQuestionMediaFiles } from "../middlewares/question-media-upload.middleware.js";
 
 export class AdminQuestionController {
     constructor(private readonly questionService: AdminQuestionService) {}
@@ -52,7 +53,10 @@ export class AdminQuestionController {
 
     create = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
-            const question = await this.questionService.createQuestion(req.body);
+            const question = await this.questionService.createQuestion(
+                req.body,
+                getQuestionMediaFiles(req),
+            );
             res.status(201).json({
                 success: true,
                 message: "Tạo câu hỏi thành công",
@@ -68,7 +72,11 @@ export class AdminQuestionController {
             const { questionId } = (res.locals.validatedParams ?? req.params) as {
                 questionId: string;
             };
-            const question = await this.questionService.updateQuestion(questionId, req.body);
+            const question = await this.questionService.updateQuestion(
+                questionId,
+                req.body,
+                getQuestionMediaFiles(req),
+            );
             res.status(200).json({
                 success: true,
                 message: "Cập nhật câu hỏi thành công",

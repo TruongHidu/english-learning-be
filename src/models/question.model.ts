@@ -35,7 +35,9 @@ export interface QuestionPersistence {
     explanation?: string;
     difficulty: VocabularyDifficulty;
     audioUrl?: string;
+    audioPublicId?: string;
     imageUrl?: string;
+    imagePublicId?: string;
     status: QuestionStatus;
     createdByAi: boolean;
     aiGenerationId?: Types.ObjectId;
@@ -125,10 +127,20 @@ const questionSchema = new Schema<QuestionPersistence>(
             required: false,
             trim: true,
         },
+        audioPublicId: {
+            type: String,
+            required: false,
+            select: false,
+        },
         imageUrl: {
             type: String,
             required: false,
             trim: true,
+        },
+        imagePublicId: {
+            type: String,
+            required: false,
+            select: false,
         },
         status: {
             type: String,

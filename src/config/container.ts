@@ -27,6 +27,7 @@ import { AdminTopicService } from "../services/admin-topic.service.js";
 import { AdminLessonService } from "../services/admin-lesson.service.js";
 import { AdminVocabularyService } from "../services/admin-vocabulary.service.js";
 import { AdminQuestionService } from "../services/admin-question.service.js";
+import { CloudinaryMediaStorage } from "../storage/cloudinary-media-storage.js";
 
 const userRepository = new UserRepository();
 const courseRepository = new CourseRepository();
@@ -39,6 +40,7 @@ const lessonQuestionRepository = new LessonQuestionRepository();
 
 const passwordHasher = new BcryptPasswordHasher();
 const tokenService = new JwtTokenService();
+const mediaStorage = new CloudinaryMediaStorage();
 
 const authService = new AuthService(userRepository, passwordHasher, tokenService);
 const userService = new UserService(userRepository, passwordHasher);
@@ -61,6 +63,7 @@ const adminQuestionService = new AdminQuestionService(
     vocabularyRepository,
     lessonRepository,
     lessonQuestionRepository,
+    mediaStorage,
 );
 
 export const adminBootstrapService = new AdminBootstrapService(userRepository, passwordHasher);

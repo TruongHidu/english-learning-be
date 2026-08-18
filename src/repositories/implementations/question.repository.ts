@@ -8,18 +8,23 @@ import {
     type QuestionPersistence,
 } from "../../models/question.model.js";
 import type {
-    CreateQuestionInput,
     QuestionListQuery,
     QuestionStatus,
-    UpdateQuestionInput,
 } from "../../types/question.types.js";
-import type { IQuestionRepository } from "../interfaces/question.repository.interface.js";
+import type {
+    CreateQuestionData,
+    IQuestionRepository,
+    UpdateQuestionData,
+} from "../interfaces/question.repository.interface.js";
 import { buildVietnameseRegex } from "../../utils/vietnamese.utils.js";
 
 
 export class QuestionRepository implements IQuestionRepository {
     public async findById(id: string): Promise<QuestionDocument | null> {
-        return QuestionModel.findById(id).populate("vocabularyIds vocabularyId", "word meaning").exec();
+        return QuestionModel.findById(id)
+            .select("+audioPublicId +imagePublicId")
+            .populate("vocabularyIds vocabularyId", "word meaning")
+            .exec();
     }
 
     public async findAll(
@@ -77,7 +82,7 @@ export class QuestionRepository implements IQuestionRepository {
         return { questions, total };
     }
 
-    public async create(data: CreateQuestionInput): Promise<QuestionDocument> {
+    public async create(data: CreateQuestionData): Promise<QuestionDocument> {
         const options: QuestionOptionPersistence[] | undefined = data.options
             ? data.options.map((opt) => ({
                   content: opt.content.trim(),
@@ -116,7 +121,9 @@ export class QuestionRepository implements IQuestionRepository {
             explanation: data.explanation?.trim() || undefined,
             difficulty: data.difficulty ?? "EASY",
             audioUrl: data.audioUrl?.trim() || undefined,
+            audioPublicId: data.audioPublicId?.trim() || undefined,
             imageUrl: data.imageUrl?.trim() || undefined,
+            imagePublicId: data.imagePublicId?.trim() || undefined,
             status: "DRAFT",
             createdByAi: false,
         });
@@ -126,9 +133,10 @@ export class QuestionRepository implements IQuestionRepository {
 
     public async update(
         id: string,
-        data: UpdateQuestionInput,
+        data: UpdateQuestionData,
     ): Promise<QuestionDocument | null> {
         const updatePayload: Partial<QuestionPersistence> = {};
+        const unsetPayload: Record<string, 1> = {};
 
         if (data.vocabularyIds !== undefined) {
             updatePayload.vocabularyIds = data.vocabularyIds
@@ -148,8 +156,26 @@ export class QuestionRepository implements IQuestionRepository {
         if (data.correctAnswer !== undefined) updatePayload.correctAnswer = data.correctAnswer;
         if (data.explanation !== undefined) updatePayload.explanation = data.explanation?.trim() || undefined;
         if (data.difficulty !== undefined) updatePayload.difficulty = data.difficulty;
-        if (data.audioUrl !== undefined) updatePayload.audioUrl = data.audioUrl?.trim() || undefined;
-        if (data.imageUrl !== undefined) updatePayload.imageUrl = data.imageUrl?.trim() || undefined;
+        if (data.audioUrl !== undefined) {
+            const audioUrl = data.audioUrl?.trim();
+            if (audioUrl) updatePayload.audioUrl = audioUrl;
+            else unsetPayload.audioUrl = 1;
+        }
+        if (data.audioPublicId !== undefined) {
+            const audioPublicId = data.audioPublicId?.trim();
+            if (audioPublicId) updatePayload.audioPublicId = audioPublicId;
+            else unsetPayload.audioPublicId = 1;
+        }
+        if (data.imageUrl !== undefined) {
+            const imageUrl = data.imageUrl?.trim();
+            if (imageUrl) updatePayload.imageUrl = imageUrl;
+            else unsetPayload.imageUrl = 1;
+        }
+        if (data.imagePublicId !== undefined) {
+            const imagePublicId = data.imagePublicId?.trim();
+            if (imagePublicId) updatePayload.imagePublicId = imagePublicId;
+            else unsetPayload.imagePublicId = 1;
+        }
 
         if (data.options !== undefined) {
             updatePayload.options = data.options
@@ -173,11 +199,23 @@ export class QuestionRepository implements IQuestionRepository {
                 : undefined;
         }
 
+        const updateOperation: {
+            $set: Partial<QuestionPersistence>;
+            $unset?: Record<string, 1>;
+        } = { $set: updatePayload };
+
+        if (Object.keys(unsetPayload).length > 0) {
+            updateOperation.$unset = unsetPayload;
+        }
+
         return QuestionModel.findByIdAndUpdate(
             id,
-            { $set: updatePayload },
+            updateOperation,
             { new: true, runValidators: true },
-        ).populate("vocabularyIds vocabularyId", "word meaning").exec();
+        )
+            .select("+audioPublicId +imagePublicId")
+            .populate("vocabularyIds vocabularyId", "word meaning")
+            .exec();
     }
 
     public async updateStatus(
