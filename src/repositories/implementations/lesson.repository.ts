@@ -15,6 +15,10 @@ export class LessonRepository implements ILessonRepository {
         return LessonModel.find({ topicId }).sort({ orderIndex: 1 }).exec();
     }
 
+    public async findPublishedByTopicId(topicId: string): Promise<LessonDocument[]> {
+        return LessonModel.find({ topicId, status: "PUBLISHED" }).sort({ orderIndex: 1 }).exec();
+    }
+
     public async findByNameAndTopicId(
         name: string,
         topicId: string,

@@ -15,6 +15,10 @@ export class TopicRepository implements ITopicRepository {
         return TopicModel.find({ sectionId }).sort({ orderIndex: 1 }).exec();
     }
 
+    public async findPublishedBySectionId(sectionId: string): Promise<TopicDocument[]> {
+        return TopicModel.find({ sectionId, status: "PUBLISHED" }).sort({ orderIndex: 1 }).exec();
+    }
+
     public async findByNameAndSectionId(
         name: string,
         sectionId: string,
