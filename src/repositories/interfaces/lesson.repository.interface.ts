@@ -9,6 +9,7 @@ export interface ILessonRepository {
     findById(id: string): Promise<LessonDocument | null>;
     findByTopicId(topicId: string): Promise<LessonDocument[]>;
     findPublishedByTopicId(topicId: string): Promise<LessonDocument[]>;
+    findPublishedByTopicIds(topicIds: string[]): Promise<LessonDocument[]>;
     findByNameAndTopicId(name: string, topicId: string): Promise<LessonDocument | null>;
     create(topicId: string, data: CreateLessonInput): Promise<LessonDocument>;
     update(id: string, data: UpdateLessonInput): Promise<LessonDocument | null>;

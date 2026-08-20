@@ -22,6 +22,36 @@ export class UserLessonProgressRepository implements IUserLessonProgressReposito
         });
     }
 
+    async upsertInProgress(userId: string, lessonId: string): Promise<void> {
+        await UserLessonProgressModel.updateOne(
+            { userId, lessonId },
+            [
+                {
+                    $set: {
+                        // A concurrent start request must never downgrade a completed lesson.
+                        status: {
+                            $cond: [
+                                { $eq: ["$status", "COMPLETED"] },
+                                "COMPLETED",
+                                "IN_PROGRESS",
+                            ],
+                        },
+                        bestScore: { $ifNull: ["$bestScore", 0] },
+                        totalAttempts: { $ifNull: ["$totalAttempts", 0] },
+                        correctCount: { $ifNull: ["$correctCount", 0] },
+                        wrongCount: { $ifNull: ["$wrongCount", 0] },
+                        unlockedAt: { $ifNull: ["$unlockedAt", "$$NOW"] },
+                        createdAt: { $ifNull: ["$createdAt", "$$NOW"] },
+                        updatedAt: "$$NOW",
+                    },
+                },
+            ],
+            {
+                upsert: true,
+            },
+        ).exec();
+    }
+
     async updateStatus(userId: string, lessonId: string, status: UserLessonProgressStatus): Promise<UserLessonProgressDocument | null> {
         return UserLessonProgressModel.findOneAndUpdate(
             { userId, lessonId },

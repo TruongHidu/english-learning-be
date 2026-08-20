@@ -33,6 +33,7 @@ import { AdminVocabularyService } from "../services/admin-vocabulary.service.js"
 import { AdminQuestionService } from "../services/admin-question.service.js";
 import { LearningService } from "../services/learning.service.js";
 import { LearningPathService } from "../services/learning-path.service.js";
+import { LearningProgressionService } from "../services/learning-progression.service.js";
 import { CloudinaryMediaStorage } from "../storage/cloudinary-media-storage.js";
 
 const userRepository = new UserRepository();
@@ -73,20 +74,22 @@ const adminQuestionService = new AdminQuestionService(
     lessonQuestionRepository,
     mediaStorage,
 );
-const learningService = new LearningService(
-    lessonRepository,
-    lessonQuestionRepository,
-    questionRepository,
-    userRepository,
-    userLessonProgressRepository,
-    learningSessionRepository,
-);
-const learningPathService = new LearningPathService(
+const learningProgressionService = new LearningProgressionService(
+    courseRepository,
     sectionRepository,
     topicRepository,
     lessonRepository,
     userLessonProgressRepository,
 );
+const learningService = new LearningService(
+    lessonQuestionRepository,
+    questionRepository,
+    userRepository,
+    userLessonProgressRepository,
+    learningSessionRepository,
+    learningProgressionService,
+);
+const learningPathService = new LearningPathService(learningProgressionService);
 
 export const adminBootstrapService = new AdminBootstrapService(userRepository, passwordHasher);
 

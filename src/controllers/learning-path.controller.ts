@@ -5,6 +5,33 @@ export class LearningPathController {
     constructor(private readonly learningPathService: LearningPathService) {}
 
     /**
+     * GET /api/v1/courses/:courseId/sections
+     * Lấy section PUBLISHED kèm trạng thái khóa theo tiến độ user.
+     */
+    getSectionsByCourse = async (
+        req: Request,
+        res: Response,
+        next: NextFunction,
+    ): Promise<void> => {
+        try {
+            const { courseId } = (res.locals.validatedParams ?? req.params) as {
+                courseId: string;
+            };
+            const result = await this.learningPathService.getPublishedSectionsByCourse(
+                req.user!.id,
+                courseId,
+            );
+            res.status(200).json({
+                success: true,
+                message: "Lấy danh sách phần học thành công",
+                data: result,
+            });
+        } catch (error: unknown) {
+            next(error);
+        }
+    };
+
+    /**
      * GET /api/v1/sections/:sectionId/topics
      * Lấy danh sách topic PUBLISHED theo section (dành cho user).
      */

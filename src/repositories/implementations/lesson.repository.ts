@@ -12,11 +12,26 @@ export class LessonRepository implements ILessonRepository {
     }
 
     public async findByTopicId(topicId: string): Promise<LessonDocument[]> {
-        return LessonModel.find({ topicId }).sort({ orderIndex: 1 }).exec();
+        return LessonModel.find({ topicId })
+            .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
+            .exec();
     }
 
     public async findPublishedByTopicId(topicId: string): Promise<LessonDocument[]> {
-        return LessonModel.find({ topicId, status: "PUBLISHED" }).sort({ orderIndex: 1 }).exec();
+        return LessonModel.find({ topicId, status: "PUBLISHED" })
+            .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
+            .exec();
+    }
+
+    public async findPublishedByTopicIds(topicIds: string[]): Promise<LessonDocument[]> {
+        if (topicIds.length === 0) return [];
+
+        return LessonModel.find({
+            topicId: { $in: topicIds },
+            status: "PUBLISHED",
+        })
+            .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
+            .exec();
     }
 
     public async findByNameAndTopicId(

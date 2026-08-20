@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "test": "tsc -p tsconfig.test.json && node --test .test-dist/tests/learning-progression.service.test.js",
     "start": "node dist/server.js"
   },
   "repository": {

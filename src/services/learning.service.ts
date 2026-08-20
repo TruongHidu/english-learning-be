@@ -2,33 +2,34 @@ import { AppError } from "../errors/app-error.js";
 import { mapLearningQuestionToResponse, mapLearningSessionToResponse } from "../mappers/learning.mapper.js";
 import type { ILearningSessionRepository } from "../repositories/interfaces/learning-session.repository.interface.js";
 import type { ILessonQuestionRepository } from "../repositories/interfaces/lesson-question.repository.interface.js";
-import type { ILessonRepository } from "../repositories/interfaces/lesson.repository.interface.js";
 import type { IQuestionRepository } from "../repositories/interfaces/question.repository.interface.js";
 import type { IUserLessonProgressRepository } from "../repositories/interfaces/user-lesson-progress.repository.interface.js";
 import type { IUserRepository } from "../repositories/interfaces/user.repository.interface.js";
 import type { StartLessonResponse } from "../types/learning.types.js";
+import type { LearningProgressionService } from "./learning-progression.service.js";
 
 export class LearningService {
     constructor(
-        private readonly lessonRepository: ILessonRepository,
         private readonly lessonQuestionRepository: ILessonQuestionRepository,
         private readonly questionRepository: IQuestionRepository,
         private readonly userRepository: IUserRepository,
         private readonly userLessonProgressRepository: IUserLessonProgressRepository,
         private readonly learningSessionRepository: ILearningSessionRepository,
+        private readonly progressionService: LearningProgressionService,
     ) {}
 
     async startLesson(userId: string, lessonId: string): Promise<StartLessonResponse> {
-        const lesson = await this.lessonRepository.findById(lessonId);
-        if (!lesson) {
-            throw new AppError("LESSON_NOT_FOUND", "Không tìm thấy bài học", 404);
-        }
-        if (lesson.status !== "PUBLISHED") {
-            throw new AppError("LESSON_NOT_PUBLISHED", "Bài học chưa được xuất bản", 404);
-        }
+        const access = await this.progressionService.getLessonProgression(userId, lessonId);
+        const lesson = access.lesson.lesson;
 
-        const progress = await this.getOrCreateProgress(userId, lessonId, lesson.topicId.toString());
-        if (progress.status === "LOCKED") {
+        if (access.section.isLocked || access.lesson.lockReason === "SECTION") {
+            throw new AppError(
+                "SECTION_LOCKED",
+                "Bạn cần hoàn thành tất cả bài học trong phần học trước",
+                403,
+            );
+        }
+        if (access.lesson.isLocked) {
             throw new AppError("LESSON_LOCKED", "Bài học này chưa được mở khóa", 403);
         }
 
@@ -56,8 +57,8 @@ export class LearningService {
             totalQuestions: questions.length,
         });
 
-        if (progress.status === "UNLOCKED") {
-            await this.userLessonProgressRepository.updateStatus(userId, lessonId, "IN_PROGRESS");
+        if (!access.lesson.isCompleted) {
+            await this.userLessonProgressRepository.upsertInProgress(userId, lessonId);
         }
 
         return {
@@ -73,19 +74,6 @@ export class LearningService {
             hearts: { current: user.stats.currentHeart, max: user.stats.maxHeart },
             questions: questions.map(mapLearningQuestionToResponse),
         };
-    }
-
-    private async getOrCreateProgress(userId: string, lessonId: string, topicId: string) {
-        const existingProgress = await this.userLessonProgressRepository.findByUserIdAndLessonId(
-            userId,
-            lessonId,
-        );
-        if (existingProgress) return existingProgress;
-
-        const topicLessons = await this.lessonRepository.findByTopicId(topicId);
-        const firstLesson = topicLessons[0];
-        const initialStatus = firstLesson?._id.toString() === lessonId ? "UNLOCKED" : "LOCKED";
-        return this.userLessonProgressRepository.create(userId, lessonId, initialStatus);
     }
 
     private async getPublishedLessonQuestions(lessonId: string) {
