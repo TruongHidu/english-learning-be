@@ -82,6 +82,7 @@ const learningProgressionService = new LearningProgressionService(
     userLessonProgressRepository,
 );
 const learningService = new LearningService(
+    lessonRepository,
     lessonQuestionRepository,
     questionRepository,
     userRepository,

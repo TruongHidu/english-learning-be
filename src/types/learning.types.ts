@@ -49,3 +49,22 @@ export interface StartLessonResponse {
 }
 
 export type { UserLessonProgressStatus };
+
+// SubmitAnswer
+export interface SubmitAnswerRequest {
+    questionId: string;
+    answer: string | string[];
+}
+
+export interface SubmitAnswerResponse {
+    isCorrect: boolean;
+    /** Chỉ trả về khi sai — để FE hiển thị đáp án đúng */
+    correctAnswer: unknown | null;
+    /** Giải thích đáp án, có thể null nếu không có */
+    explanation: string | null;
+    heartsRemaining: number;
+    sessionStatus: LearningSessionStatus;
+    correctCount: number;
+    wrongCount: number;
+    score: number;
+}

@@ -18,4 +18,5 @@ export interface ILessonRepository {
     getMaxOrderIndex(topicId: string): Promise<number>;
     reorder(topicId: string, lessonIds: string[]): Promise<void>;
     countByTopicId(topicId: string): Promise<number>;
+    findNextLesson(topicId: string, currentOrderIndex: number): Promise<LessonDocument | null>;
 }

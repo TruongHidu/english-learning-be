@@ -23,33 +23,28 @@ export class UserLessonProgressRepository implements IUserLessonProgressReposito
     }
 
     async upsertInProgress(userId: string, lessonId: string): Promise<void> {
-        await UserLessonProgressModel.updateOne(
-            { userId, lessonId },
-            [
-                {
-                    $set: {
-                        // A concurrent start request must never downgrade a completed lesson.
-                        status: {
-                            $cond: [
-                                { $eq: ["$status", "COMPLETED"] },
-                                "COMPLETED",
-                                "IN_PROGRESS",
-                            ],
-                        },
-                        bestScore: { $ifNull: ["$bestScore", 0] },
-                        totalAttempts: { $ifNull: ["$totalAttempts", 0] },
-                        correctCount: { $ifNull: ["$correctCount", 0] },
-                        wrongCount: { $ifNull: ["$wrongCount", 0] },
-                        unlockedAt: { $ifNull: ["$unlockedAt", "$$NOW"] },
-                        createdAt: { $ifNull: ["$createdAt", "$$NOW"] },
-                        updatedAt: "$$NOW",
-                    },
-                },
-            ],
-            {
-                upsert: true,
-            },
-        ).exec();
+        const existing = await UserLessonProgressModel.findOne({ userId, lessonId }).exec();
+
+        if (!existing) {
+            // New record: create as IN_PROGRESS
+            await UserLessonProgressModel.create({
+                userId,
+                lessonId,
+                status: "IN_PROGRESS",
+                bestScore: 0,
+                totalAttempts: 0,
+                correctCount: 0,
+                wrongCount: 0,
+                unlockedAt: new Date(),
+            });
+        } else if (existing.status !== "COMPLETED") {
+            // Never downgrade a COMPLETED lesson back to IN_PROGRESS
+            await UserLessonProgressModel.updateOne(
+                { userId, lessonId },
+                { $set: { status: "IN_PROGRESS" } },
+            ).exec();
+        }
+        // If already COMPLETED — do nothing
     }
 
     async updateStatus(userId: string, lessonId: string, status: UserLessonProgressStatus): Promise<UserLessonProgressDocument | null> {

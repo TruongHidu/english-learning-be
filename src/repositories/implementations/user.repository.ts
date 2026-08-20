@@ -82,4 +82,12 @@ export class UserRepository implements IUserRepository {
             { runValidators: true },
         ).exec();
     }
+
+    async updateHeart(userId: string, delta: number): Promise<void> {
+        await UserModel.updateOne(
+            { _id: userId },
+            { $inc: { "stats.currentHeart": delta } },
+            { runValidators: true },
+        ).exec();
+    }
 }

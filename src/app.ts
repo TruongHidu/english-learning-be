@@ -14,6 +14,7 @@ import courseRouter from "./routes/course.routes.js";
 import userRouter from "./routes/user.routes.js";
 import learningRouter from "./routes/learning.routes.js";
 import learningPathRouter from "./routes/learning-path.routes.js";
+import sessionRouter from "./routes/session.routes.js";
 
 const app = express();
 
@@ -39,6 +40,7 @@ app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/courses", courseRouter);
 app.use("/api/v1/lessons", learningRouter);
+app.use("/api/v1/sessions", sessionRouter);
 app.use("/api/v1", learningPathRouter);
 app.use("/api/v1/admin/courses", adminCourseRouter);
 app.use("/api/v1/admin/sections", adminSectionRouter);

@@ -113,4 +113,14 @@ export class LessonRepository implements ILessonRepository {
     public async countByTopicId(topicId: string): Promise<number> {
         return LessonModel.countDocuments({ topicId }).exec();
     }
+
+    public async findNextLesson(topicId: string, currentOrderIndex: number): Promise<LessonDocument | null> {
+        return LessonModel.findOne({
+            topicId,
+            status: "PUBLISHED",
+            orderIndex: { $gt: currentOrderIndex }
+        })
+        .sort({ orderIndex: 1 })
+        .exec();
+    }
 }

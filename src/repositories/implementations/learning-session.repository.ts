@@ -1,7 +1,11 @@
 import { LearningSessionModel, type LearningSessionDocument } from "../../models/learning-session.model.js";
-import type { CreateLearningSessionData, ILearningSessionRepository } from "../interfaces/learning-session.repository.interface.js";
+import type { CreateLearningSessionData, ILearningSessionRepository, UpdateSessionAfterAnswerData } from "../interfaces/learning-session.repository.interface.js";
 
 export class LearningSessionRepository implements ILearningSessionRepository {
+    async findByIdAndUserId(sessionId: string, userId: string): Promise<LearningSessionDocument | null> {
+        return LearningSessionModel.findOne({ _id: sessionId, userId }).exec();
+    }
+
     async abandonInProgressByUserIdAndLessonId(userId: string, lessonId: string): Promise<void> {
         await LearningSessionModel.updateMany(
             { userId, lessonId, status: "IN_PROGRESS" },
@@ -24,5 +28,13 @@ export class LearningSessionRepository implements ILearningSessionRepository {
             diamondEarned: 0,
             startedAt: new Date(),
         });
+    }
+
+    async updateAfterAnswer(sessionId: string, data: UpdateSessionAfterAnswerData): Promise<LearningSessionDocument | null> {
+        return LearningSessionModel.findByIdAndUpdate(
+            sessionId,
+            { $set: data },
+            { new: true, runValidators: true },
+        ).exec();
     }
 }

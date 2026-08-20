@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { LearningPathService } from "../services/learning-path.service.js";
 
 export class LearningPathController {
-    constructor(private readonly learningPathService: LearningPathService) {}
+    constructor(private readonly learningPathService: LearningPathService) { }
 
     /**
      * GET /api/v1/courses/:courseId/sections
@@ -33,7 +33,6 @@ export class LearningPathController {
 
     /**
      * GET /api/v1/sections/:sectionId/topics
-     * Lấy danh sách topic PUBLISHED theo section (dành cho user).
      */
     getTopicsBySection = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
