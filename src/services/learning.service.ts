@@ -10,6 +10,8 @@ import type { StartLessonResponse, SubmitAnswerRequest, SubmitAnswerResponse } f
 import type { LearningSessionStatus } from "../models/learning-session.model.js";
 import type { LearningProgressionService } from "./learning-progression.service.js";
 
+import type { HeartService } from "./heart.service.js";
+
 export class LearningService {
     constructor(
         private readonly lessonRepository: ILessonRepository,
@@ -19,6 +21,7 @@ export class LearningService {
         private readonly userLessonProgressRepository: IUserLessonProgressRepository,
         private readonly learningSessionRepository: ILearningSessionRepository,
         private readonly progressionService: LearningProgressionService,
+        private readonly heartService: HeartService,
     ) {}
 
     async startLesson(userId: string, lessonId: string): Promise<StartLessonResponse> {
@@ -36,7 +39,7 @@ export class LearningService {
             throw new AppError("LESSON_LOCKED", "Bài học này chưa được mở khóa", 403);
         }
 
-        const user = await this.userRepository.findById(userId);
+        const user = await this.heartService.syncUserHearts(userId);
         if (!user) {
             throw new AppError("USER_NOT_FOUND", "Không tìm thấy người dùng", 404);
         }
@@ -74,7 +77,11 @@ export class LearningService {
                 questionCount: questions.length,
             },
             progress: { currentQuestionIndex: 0, totalQuestions: questions.length },
-            hearts: { current: user.stats.currentHeart, max: user.stats.maxHeart },
+            hearts: {
+                current: user.stats.currentHeart,
+                max: user.stats.maxHeart,
+                nextHeartAt: user.stats.nextHeartAt ? user.stats.nextHeartAt.toISOString() : null,
+            },
             questions: questions.map(mapLearningQuestionToResponse),
         };
     }
@@ -147,8 +154,13 @@ export class LearningService {
             status: newStatus,
         });
 
+        let nextHeartAt: Date | null = null;
         if (!isCorrect) {
-            await this.userRepository.updateHeart(userId, -1);
+            const deductionResult = await this.heartService.deductHeart(userId);
+            nextHeartAt = deductionResult.nextHeartAt;
+        } else {
+            const syncedUser = await this.heartService.syncUserHearts(userId);
+            nextHeartAt = syncedUser.stats.nextHeartAt ?? null;
         }
 
         // 6. Xử lý logic Unlock bài tiếp theo nếu COMPLETED
@@ -178,6 +190,7 @@ export class LearningService {
             correctAnswer: isCorrect ? null : question.correctAnswer ?? null,
             explanation: question.explanation ?? null,
             heartsRemaining: newHeartRemaining,
+            nextHeartAt: nextHeartAt ? nextHeartAt.toISOString() : null,
             sessionStatus: newStatus,
             correctCount: newCorrectCount,
             wrongCount: newWrongCount,

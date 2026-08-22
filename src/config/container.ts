@@ -23,6 +23,7 @@ import { UserLessonProgressRepository } from "../repositories/implementations/us
 import { BcryptPasswordHasher } from "../security/bcrypt-password-hasher.js";
 import { JwtTokenService } from "../security/jwt-token-service.js";
 import { AdminBootstrapService } from "../services/admin-bootstrap.service.js";
+import { HeartService } from "../services/heart.service.js";
 import { AuthService } from "../services/auth.service.js";
 import { CourseService } from "../services/course.service.js";
 import { SectionService } from "../services/section.service.js";
@@ -50,9 +51,10 @@ const learningSessionRepository = new LearningSessionRepository();
 const passwordHasher = new BcryptPasswordHasher();
 const tokenService = new JwtTokenService();
 const mediaStorage = new CloudinaryMediaStorage();
+const heartService = new HeartService(userRepository);
 
-const authService = new AuthService(userRepository, passwordHasher, tokenService);
-const userService = new UserService(userRepository, passwordHasher);
+const authService = new AuthService(userRepository, passwordHasher, tokenService, heartService);
+const userService = new UserService(userRepository, passwordHasher, heartService);
 const courseService = new CourseService(courseRepository);
 const sectionService = new SectionService(sectionRepository, courseRepository);
 const adminTopicService = new AdminTopicService(
@@ -89,6 +91,7 @@ const learningService = new LearningService(
     userLessonProgressRepository,
     learningSessionRepository,
     learningProgressionService,
+    heartService,
 );
 const learningPathService = new LearningPathService(learningProgressionService);
 

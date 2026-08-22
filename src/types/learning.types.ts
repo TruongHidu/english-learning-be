@@ -44,7 +44,7 @@ export interface StartLessonResponse {
         questionCount: number;
     };
     progress: { currentQuestionIndex: number; totalQuestions: number };
-    hearts: { current: number; max: number };
+    hearts: { current: number; max: number; nextHeartAt: string | null };
     questions: LearningQuestionResponse[];
 }
 
@@ -63,6 +63,7 @@ export interface SubmitAnswerResponse {
     /** Giải thích đáp án, có thể null nếu không có */
     explanation: string | null;
     heartsRemaining: number;
+    nextHeartAt: string | null;
     sessionStatus: LearningSessionStatus;
     correctCount: number;
     wrongCount: number;
