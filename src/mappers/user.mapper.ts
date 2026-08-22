@@ -14,6 +14,7 @@ export class UserMapper {
             stats: {
                 currentHeart: user.stats.currentHeart,
                 maxHeart: user.stats.maxHeart,
+                nextHeartAt: user.stats.nextHeartAt ? user.stats.nextHeartAt.toISOString() : null,
                 diamond: user.stats.diamond,
                 totalXp: user.stats.totalXp,
                 level: user.stats.level,

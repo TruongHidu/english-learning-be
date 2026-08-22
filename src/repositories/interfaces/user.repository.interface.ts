@@ -19,4 +19,12 @@ export interface IUserRepository {
     updateLastLogin(userId: string, date: Date): Promise<void>;
     updateDisplayName(userId: string, displayName: string): Promise<User | null>;
     updatePassword(userId: string, passwordHash: string): Promise<void>;
+    updateHeart(userId: string, delta: number): Promise<void>;
+    updateHeartState(
+        userId: string,
+        currentHeart: number,
+        heartUpdatedAt: Date,
+        expectedCurrentHeart?: number,
+        expectedHeartUpdatedAt?: Date,
+    ): Promise<User | null>;
 }

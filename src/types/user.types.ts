@@ -21,6 +21,7 @@ export interface UserProfileResponse {
     stats: {
         currentHeart: number;
         maxHeart: number;
+        nextHeartAt: string | null;
         diamond: number;
         totalXp: number;
         level: number;

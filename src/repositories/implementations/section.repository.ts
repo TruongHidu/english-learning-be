@@ -45,7 +45,7 @@ export class SectionRepository implements ISectionRepository {
         }
 
         const documents = await SectionModel.find(filter)
-            .sort({ orderIndex: 1, createdAt: 1 })
+            .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
             .exec();
 
         return documents.map((doc) => toDomainSection(doc));
@@ -56,7 +56,7 @@ export class SectionRepository implements ISectionRepository {
             courseId,
             status: "PUBLISHED",
         })
-            .sort({ orderIndex: 1, createdAt: 1 })
+            .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
             .exec();
 
         return documents.map((doc) => toDomainSection(doc));

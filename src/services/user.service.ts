@@ -9,14 +9,17 @@ import type {
     UserProfileResponse,
 } from "../types/user.types.js";
 
+import type { HeartService } from "./heart.service.js";
+
 export class UserService {
     constructor(
         private readonly userRepository: IUserRepository,
         private readonly passwordHasher: IPasswordHasher,
+        private readonly heartService: HeartService,
     ) {}
 
     async getProfile(userId: string): Promise<UserProfileResponse> {
-        const user = await this.userRepository.findById(userId);
+        const user = await this.heartService.syncUserHearts(userId);
 
         if (!user) {
             throw new AppError("USER_NOT_FOUND", "Không tìm thấy người dùng", 404);
