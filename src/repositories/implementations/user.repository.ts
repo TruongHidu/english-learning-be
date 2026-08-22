@@ -119,4 +119,33 @@ export class UserRepository implements IUserRepository {
 
         return document ? toDomainUser(document) : null;
     }
+
+    async updateStats(
+        userId: string,
+        statsUpdate: {
+            totalXp: number;
+            level: number;
+            diamond: number;
+            currentStreak: number;
+            longestStreak: number;
+            lastStudyDate: Date;
+        },
+    ): Promise<User | null> {
+        const document = await UserModel.findByIdAndUpdate(
+            userId,
+            {
+                $set: {
+                    "stats.totalXp": statsUpdate.totalXp,
+                    "stats.level": statsUpdate.level,
+                    "stats.diamond": statsUpdate.diamond,
+                    "stats.currentStreak": statsUpdate.currentStreak,
+                    "stats.longestStreak": statsUpdate.longestStreak,
+                    "stats.lastStudyDate": statsUpdate.lastStudyDate,
+                },
+            },
+            { new: true, runValidators: true },
+        ).exec();
+
+        return document ? toDomainUser(document) : null;
+    }
 }

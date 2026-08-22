@@ -1,5 +1,5 @@
 import { UserLessonProgressModel, type UserLessonProgressDocument, type UserLessonProgressStatus } from "../../models/user-lesson-progress.model.js";
-import type { IUserLessonProgressRepository } from "../interfaces/user-lesson-progress.repository.interface.js";
+import type { CompleteLessonData, IUserLessonProgressRepository } from "../interfaces/user-lesson-progress.repository.interface.js";
 
 export class UserLessonProgressRepository implements IUserLessonProgressRepository {
     async findByUserIdAndLessonId(userId: string, lessonId: string): Promise<UserLessonProgressDocument | null> {
@@ -52,6 +52,27 @@ export class UserLessonProgressRepository implements IUserLessonProgressReposito
             { userId, lessonId },
             { $set: { status } },
             { new: true, runValidators: true },
+        ).exec();
+    }
+
+    async completeLesson(
+        userId: string,
+        lessonId: string,
+        data: CompleteLessonData,
+    ): Promise<UserLessonProgressDocument | null> {
+        return UserLessonProgressModel.findOneAndUpdate(
+            { userId, lessonId },
+            {
+                $set: {
+                    status: "COMPLETED",
+                    bestScore: data.bestScore,
+                    totalAttempts: data.totalAttempts,
+                    correctCount: data.correctCount,
+                    wrongCount: data.wrongCount,
+                    completedAt: data.completedAt,
+                },
+            },
+            { new: true, runValidators: true, upsert: true },
         ).exec();
     }
 }

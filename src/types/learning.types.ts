@@ -56,6 +56,17 @@ export interface SubmitAnswerRequest {
     answer: string | string[];
 }
 
+export interface LessonCompletionRewards {
+    xpEarned: number;
+    diamondEarned: number;
+    totalXp: number;
+    level: number;
+    currentStreak: number;
+    longestStreak: number;
+    learnedVocabularyIds: string[];
+    isNextLessonUnlocked: boolean;
+}
+
 export interface SubmitAnswerResponse {
     isCorrect: boolean;
     /** Chỉ trả về khi sai — để FE hiển thị đáp án đúng */
@@ -68,4 +79,6 @@ export interface SubmitAnswerResponse {
     correctCount: number;
     wrongCount: number;
     score: number;
+    rewards: LessonCompletionRewards | null;
 }
+

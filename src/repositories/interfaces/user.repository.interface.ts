@@ -27,4 +27,15 @@ export interface IUserRepository {
         expectedCurrentHeart?: number,
         expectedHeartUpdatedAt?: Date,
     ): Promise<User | null>;
+    updateStats(
+        userId: string,
+        statsUpdate: {
+            totalXp: number;
+            level: number;
+            diamond: number;
+            currentStreak: number;
+            longestStreak: number;
+            lastStudyDate: Date;
+        },
+    ): Promise<User | null>;
 }

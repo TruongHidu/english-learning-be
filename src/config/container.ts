@@ -20,6 +20,7 @@ import { QuestionRepository } from "../repositories/implementations/question.rep
 import { LessonQuestionRepository } from "../repositories/implementations/lesson-question.repository.js";
 import { LearningSessionRepository } from "../repositories/implementations/learning-session.repository.js";
 import { UserLessonProgressRepository } from "../repositories/implementations/user-lesson-progress.repository.js";
+import { UserVocabularyRepository } from "../repositories/implementations/user-vocabulary.repository.js";
 import { BcryptPasswordHasher } from "../security/bcrypt-password-hasher.js";
 import { JwtTokenService } from "../security/jwt-token-service.js";
 import { AdminBootstrapService } from "../services/admin-bootstrap.service.js";
@@ -35,6 +36,7 @@ import { AdminQuestionService } from "../services/admin-question.service.js";
 import { LearningService } from "../services/learning.service.js";
 import { LearningPathService } from "../services/learning-path.service.js";
 import { LearningProgressionService } from "../services/learning-progression.service.js";
+import { UserStatsService } from "../services/user-stats.service.js";
 import { CloudinaryMediaStorage } from "../storage/cloudinary-media-storage.js";
 
 const userRepository = new UserRepository();
@@ -47,14 +49,16 @@ const questionRepository = new QuestionRepository();
 const lessonQuestionRepository = new LessonQuestionRepository();
 const userLessonProgressRepository = new UserLessonProgressRepository();
 const learningSessionRepository = new LearningSessionRepository();
+const userVocabularyRepository = new UserVocabularyRepository();
 
 const passwordHasher = new BcryptPasswordHasher();
 const tokenService = new JwtTokenService();
 const mediaStorage = new CloudinaryMediaStorage();
 const heartService = new HeartService(userRepository);
+const userStatsService = new UserStatsService(userRepository);
 
 const authService = new AuthService(userRepository, passwordHasher, tokenService, heartService);
-const userService = new UserService(userRepository, passwordHasher, heartService);
+const userService = new UserService(userRepository, passwordHasher, heartService, userVocabularyRepository);
 const courseService = new CourseService(courseRepository);
 const sectionService = new SectionService(sectionRepository, courseRepository);
 const adminTopicService = new AdminTopicService(
@@ -92,6 +96,8 @@ const learningService = new LearningService(
     learningSessionRepository,
     learningProgressionService,
     heartService,
+    userStatsService,
+    userVocabularyRepository,
 );
 const learningPathService = new LearningPathService(learningProgressionService);
 

@@ -21,7 +21,7 @@
   "homepage": "https://github.com/TruongHidu/english-learning-be#readme",
   "dependencies": {
     "bcrypt": "^6.0.0",
-    "cloudinary": "^2.10.0",
+    "cloudinary": "^2.10.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

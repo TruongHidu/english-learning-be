@@ -12,6 +12,9 @@ export interface UpdateSessionAfterAnswerData {
     score: number;
     heartRemaining: number;
     status: LearningSessionStatus;
+    xpEarned?: number;
+    diamondEarned?: number;
+    completedAt?: Date;
 }
 
 export interface ILearningSessionRepository {

@@ -19,5 +19,11 @@ userRouter.patch(
     validate(changePasswordSchema),
     userController.changePassword,
 );
+userRouter.get("/vocabularies", authenticate, userController.getLearnedVocabularies);
+userRouter.get("/vocabularies/by-sections", authenticate, userController.getVocabulariesBySections);
+userRouter.get("/topics/:topicId/vocabularies", authenticate, userController.getTopicVocabularies);
+userRouter.get("/lessons/:lessonId/vocabularies", authenticate, userController.getLessonVocabularies);
 
 export default userRouter;
+
+

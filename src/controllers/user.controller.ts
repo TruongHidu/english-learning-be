@@ -53,4 +53,61 @@ export class UserController {
             next(error);
         }
     };
+
+    getLearnedVocabularies = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const vocabularies = await this.userService.getLearnedVocabularies(req.user!.id);
+            res.status(200).json({
+                success: true,
+                message: "Lấy danh sách từ vựng đã học thành công",
+                data: { vocabularies },
+            });
+        } catch (error: unknown) {
+            next(error);
+        }
+    };
+
+    getVocabulariesBySections = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const sections = await this.userService.getVocabulariesGroupedBySections(req.user!.id);
+            res.status(200).json({
+                success: true,
+                message: "Lấy danh sách từ vựng theo phần học thành công",
+                data: { sections },
+            });
+        } catch (error: unknown) {
+            next(error);
+        }
+    };
+
+    getTopicVocabularies = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const topicId = req.params.topicId as string;
+            const topicGroup = await this.userService.getVocabulariesByTopic(req.user!.id, topicId);
+            res.status(200).json({
+                success: true,
+                message: "Lấy danh sách từ vựng chủ đề thành công",
+                data: { topicGroup },
+            });
+        } catch (error: unknown) {
+            next(error);
+        }
+    };
+    getLessonVocabularies = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const lessonId = req.params.lessonId as string;
+            const lessonGroup = await this.userService.getVocabulariesByLesson(req.user!.id, lessonId);
+            res.status(200).json({
+                success: true,
+                message: "Lấy danh sách từ vựng bài học thành công",
+                data: { lessonGroup },
+            });
+        } catch (error: unknown) {
+            next(error);
+        }
+    };
 }
+
+
+
+
