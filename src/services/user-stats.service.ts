@@ -33,12 +33,13 @@ export class UserStatsService {
             ? Math.round((correctCount / totalQuestions) * 100)
             : 0;
 
-        if (isAlreadyCompleted) {
-            return { score, xpEarned: 0, diamondEarned: 0 };
-        }
-
         const isPerfect = score === 100;
         const isPassed = score >= requiredScore;
+
+        if (isAlreadyCompleted) {
+            const xpEarned = isPassed ? (5 + (isPerfect ? 5 : 0)) : 0;
+            return { score, xpEarned, diamondEarned: 0 };
+        }
 
         const xpEarned = 10 + correctCount * 2 + (isPerfect ? 5 : 0);
         const diamondEarned = (isPassed ? 5 : 0) + (isPerfect ? 5 : 0);

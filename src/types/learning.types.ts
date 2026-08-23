@@ -19,6 +19,7 @@ export interface LearningQuestionResponse {
     matchingRightItems: string[] | null;
     audioUrl: string | null;
     imageUrl: string | null;
+    vocabularyId: string | null;
 }
 
 export interface LearningSessionResponse {

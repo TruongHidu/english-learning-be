@@ -30,6 +30,7 @@ export const mapLearningQuestionToResponse = (question: QuestionDocument): Learn
         : null,
     audioUrl: question.audioUrl ?? null,
     imageUrl: question.imageUrl ?? null,
+    vocabularyId: question.vocabularyId?.toString() ?? null,
 });
 
 export const mapLearningSessionToResponse = (

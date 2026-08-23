@@ -15,6 +15,7 @@ import userRouter from "./routes/user.routes.js";
 import learningRouter from "./routes/learning.routes.js";
 import learningPathRouter from "./routes/learning-path.routes.js";
 import sessionRouter from "./routes/session.routes.js";
+import userVocabularyRouter from "./routes/user-vocabulary.routes.js";
 
 const app = express();
 
@@ -38,6 +39,7 @@ app.get("/api/v1/health", (_req, res) => {
 
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", userRouter);
+app.use("/api/v1/user", userVocabularyRouter);
 app.use("/api/v1/courses", courseRouter);
 app.use("/api/v1/lessons", learningRouter);
 app.use("/api/v1/sessions", sessionRouter);

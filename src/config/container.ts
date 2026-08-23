@@ -103,6 +103,26 @@ const learningPathService = new LearningPathService(learningProgressionService);
 
 export const adminBootstrapService = new AdminBootstrapService(userRepository, passwordHasher);
 
+import { UserVocabularyService } from "../services/user-vocabulary.service.js";
+import { VocabularyReviewService } from "../services/vocabulary-review.service.js";
+import { UserVocabularyController } from "../controllers/user-vocabulary.controller.js";
+import { VocabularyReviewController } from "../controllers/vocabulary-review.controller.js";
+
+const userVocabularyService = new UserVocabularyService(
+    vocabularyRepository,
+    userVocabularyRepository
+);
+
+const vocabularyReviewService = new VocabularyReviewService(
+    userVocabularyRepository,
+    vocabularyRepository,
+    userStatsService,
+    userRepository
+);
+
+export const userVocabularyController = new UserVocabularyController(userVocabularyService);
+export const vocabularyReviewController = new VocabularyReviewController(vocabularyReviewService);
+
 export const authController = new AuthController(authService);
 export const userController = new UserController(userService);
 export const courseController = new CourseController(courseService);

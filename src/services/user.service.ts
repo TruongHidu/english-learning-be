@@ -116,7 +116,7 @@ export class UserService {
                 audioUrl: vocab?.audioUrl ?? null,
                 imageUrl: vocab?.imageUrl ?? null,
                 difficulty: vocab?.difficulty ?? "EASY",
-                masteryLevel: doc.masteryLevel,
+                masteryLevel: doc.reviewLevel,
                 reviewCount: doc.reviewCount,
                 learnedAt: doc.learnedAt,
                 lastReviewedAt: doc.lastReviewedAt,
@@ -135,17 +135,87 @@ export class UserService {
             if (completedProgresses.length === 0) return;
 
             const lessonIds = completedProgresses.map((p) => p.lessonId);
-            const lessons = await LessonModel.find({ _id: { $in: lessonIds } }).exec();
-            const topicIds = Array.from(new Set(lessons.map((l) => l.topicId.toString())));
+            
+            // Find all questions in these lessons
+            const lessonQuestions = await LessonQuestionModel.find({ lessonId: { $in: lessonIds } }).exec();
+            const questionIds = lessonQuestions.map(lq => lq.questionId);
+            
+            // Find vocabularies related to these questions
+            const questions = await QuestionModel.find({ _id: { $in: questionIds }, status: "PUBLISHED" }).exec();
+            
+            const vocabLessonMap = new Map<string, { topicId: string, lessonId: string }>();
+            
+            for (const q of questions) {
+                const lessonId = lessonQuestions.find(lq => lq.questionId.equals(q._id))?.lessonId.toString();
+                if (!lessonId) continue;
+                
+                if (q.vocabularyId) {
+                    vocabLessonMap.set(q.vocabularyId.toString(), { topicId: "", lessonId });
+                }
+                if (q.vocabularyIds) {
+                    for (const vId of q.vocabularyIds) {
+                        vocabLessonMap.set(vId.toString(), { topicId: "", lessonId });
+                    }
+                }
+                if (q.matchingPairs) {
+                    for (const pair of q.matchingPairs) {
+                        if (pair.vocabularyId) {
+                            vocabLessonMap.set(pair.vocabularyId.toString(), { topicId: "", lessonId });
+                        }
+                    }
+                }
+            }
+            
+            if (vocabLessonMap.size === 0) return;
+            
+            const vocabIds = Array.from(vocabLessonMap.keys());
+            const vocabObjects = await VocabularyModel.find({ _id: { $in: vocabIds } }).exec();
+            
+            for (const v of vocabObjects) {
+                const mapData = vocabLessonMap.get(v._id.toString());
+                if (mapData) {
+                    mapData.topicId = v.topicId.toString();
+                }
+            }
 
-            const topicVocabs = await VocabularyModel.find({
-                topicId: { $in: topicIds.map((tId) => new Types.ObjectId(tId)) },
-                status: "PUBLISHED",
-            }).exec();
+            // Group by topicId, lessonId to use the repository method efficiently
+            const ops = [];
+            for (const v of vocabObjects) {
+                const mapData = vocabLessonMap.get(v._id.toString());
+                if (mapData && mapData.topicId && mapData.lessonId) {
+                    ops.push({
+                        updateOne: {
+                            filter: {
+                                userId: userObjId,
+                                vocabularyId: v._id,
+                            },
+                            update: {
+                                $set: {
+                                    topicId: new Types.ObjectId(mapData.topicId),
+                                    lessonId: new Types.ObjectId(mapData.lessonId),
+                                },
+                                $setOnInsert: {
+                                    userId: userObjId,
+                                    vocabularyId: v._id,
+                                    status: "LEARNED" as const,
+                                    reviewLevel: 0,
+                                    reviewCount: 0,
+                                    correctCount: 0,
+                                    incorrectCount: 0,
+                                    excludedFromReview: false,
+                                    learnedAt: new Date(),
+                                    nextReviewAt: new Date(),
+                                },
+                            },
+                            upsert: true,
+                        }
+                    });
+                }
+            }
 
-            const vocabIds = topicVocabs.map((v) => v._id.toString());
-            if (vocabIds.length > 0) {
-                await this.userVocabularyRepository.upsertLearnedVocabularies(userId, vocabIds);
+            if (ops.length > 0) {
+                const { UserVocabularyModel } = await import("../models/user-vocabulary.model.js");
+                await UserVocabularyModel.bulkWrite(ops as any, { ordered: false });
             }
         } catch (err) {
             console.error("Error auto-syncing vocabularies for completed lessons:", err);
@@ -156,10 +226,10 @@ export class UserService {
         await this.syncVocabulariesFromCompletedLessons(userId);
 
         const userVocabs = await this.userVocabularyRepository.findByUserId(userId);
-        const userVocabMap = new Map<string, { masteryLevel: number; reviewCount: number; lastReviewedAt: Date }>();
+        const userVocabMap = new Map<string, { masteryLevel: number; reviewCount: number; lastReviewedAt: Date | null }>();
         for (const uv of userVocabs) {
             userVocabMap.set(uv.vocabularyId.toString(), {
-                masteryLevel: uv.masteryLevel,
+                masteryLevel: uv.reviewLevel,
                 reviewCount: uv.reviewCount,
                 lastReviewedAt: uv.lastReviewedAt,
             });
@@ -235,7 +305,7 @@ export class UserService {
 
     private formatVocabularyItems(
         vocabularies: any[],
-        userVocabMap: Map<string, { masteryLevel: number; reviewCount: number; lastReviewedAt: Date }>
+        userVocabMap: Map<string, { masteryLevel: number; reviewCount: number; lastReviewedAt: Date | null }>
     ) {
         return vocabularies.map((v) => {
             const userLearned = userVocabMap.get(v._id.toString());
@@ -269,10 +339,10 @@ export class UserService {
         }
 
         const userVocabs = await this.userVocabularyRepository.findByUserId(userId);
-        const userVocabMap = new Map<string, { masteryLevel: number; reviewCount: number; lastReviewedAt: Date }>();
+        const userVocabMap = new Map<string, { masteryLevel: number; reviewCount: number; lastReviewedAt: Date | null }>();
         for (const uv of userVocabs) {
             userVocabMap.set(uv.vocabularyId.toString(), {
-                masteryLevel: uv.masteryLevel,
+                masteryLevel: uv.reviewLevel,
                 reviewCount: uv.reviewCount,
                 lastReviewedAt: uv.lastReviewedAt,
             });
@@ -336,10 +406,10 @@ export class UserService {
         }
 
         const userVocabs = await this.userVocabularyRepository.findByUserId(userId);
-        const userVocabMap = new Map<string, { masteryLevel: number; reviewCount: number; lastReviewedAt: Date }>();
+        const userVocabMap = new Map<string, { masteryLevel: number; reviewCount: number; lastReviewedAt: Date | null }>();
         for (const uv of userVocabs) {
             userVocabMap.set(uv.vocabularyId.toString(), {
-                masteryLevel: uv.masteryLevel,
+                masteryLevel: uv.reviewLevel,
                 reviewCount: uv.reviewCount,
                 lastReviewedAt: uv.lastReviewedAt,
             });

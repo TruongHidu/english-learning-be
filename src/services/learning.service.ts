@@ -246,7 +246,9 @@ export class LearningService {
             const learnedVocabularyIds = Array.from(vocabIdSet);
 
             try {
-                await this.userVocabularyRepository.upsertLearnedVocabularies(userId, learnedVocabularyIds);
+                if (currentLesson?.topicId && currentLesson?._id) {
+                    await this.userVocabularyRepository.upsertLearnedVocabularies(userId, learnedVocabularyIds, currentLesson.topicId.toString(), currentLesson._id.toString());
+                }
             } catch (err) {
                 console.error("Error saving learned vocabularies:", err);
             }
