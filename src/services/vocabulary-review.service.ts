@@ -37,9 +37,9 @@ export class VocabularyReviewService {
         private readonly userRepository: IUserRepository
     ) {}
 
-    async getReviewSession(userId: string, query: { limit: number }) {
-        const { limit } = query;
-        let items = await this.userVocabularyRepository.findDueForReview(userId, { limit });
+    async getReviewSession(userId: string, query: { limit: number; forceAll?: boolean }) {
+        const { limit, forceAll } = query;
+        let items = await this.userVocabularyRepository.findDueForReview(userId, { limit, forceAll });
         return items;
     }
 

@@ -10,6 +10,7 @@ const objectIdSchema = z
 export const reviewDueQuerySchema = z.object({
     topicId: objectIdSchema.optional(),
     limit: z.string().regex(/^\d+$/).optional().transform((val) => (val ? parseInt(val, 10) : 20)),
+    forceAll: z.string().optional().transform(val => val === "true"),
 });
 
 export const reviewSubmitSchema = z.object({

@@ -9,8 +9,9 @@ export class VocabularyReviewController {
         try {
             const userId = req.user?.id;
             const limit = parseInt(req.query.limit as string) || 20;
+            const forceAll = req.query.forceAll === "true" || req.query.forceAll === true;
 
-            const items = await this.vocabularyReviewService.getReviewSession(userId!, { limit });
+            const items = await this.vocabularyReviewService.getReviewSession(userId!, { limit, forceAll });
             res.status(200).json({
                 success: true,
                 message: items.length > 0 ? "Lấy phiên ôn tập thành công" : "Bạn chưa học từ nào, hãy bắt đầu học ngay!",

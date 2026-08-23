@@ -159,13 +159,18 @@ export class UserVocabularyRepository implements IUserVocabularyRepository {
             .exec();
     }
 
-    async findDueForReview(userId: string, query: { limit: number }): Promise<UserVocabularyDocument[]> {
-        return UserVocabularyModel.find({
+    async findDueForReview(userId: string, query: { limit: number; forceAll?: boolean }): Promise<UserVocabularyDocument[]> {
+        const filter: any = {
             userId: new Types.ObjectId(userId),
             status: "LEARNED",
             excludedFromReview: false,
-            nextReviewAt: { $lte: new Date() },
-        })
+        };
+
+        if (!query.forceAll) {
+            filter.nextReviewAt = { $lte: new Date() };
+        }
+
+        return UserVocabularyModel.find(filter)
             .sort({ incorrectCount: -1, reviewLevel: 1, nextReviewAt: 1 })
             .limit(query.limit)
             .populate("vocabularyId")

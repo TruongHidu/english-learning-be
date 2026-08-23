@@ -34,7 +34,7 @@ export interface IUserVocabularyRepository {
     
     findByUserIdWithDetails(userId: string): Promise<UserVocabularyDocument[]>;
     
-    findDueForReview(userId: string, query: { limit: number }): Promise<UserVocabularyDocument[]>;
+    findDueForReview(userId: string, query: { limit: number; forceAll?: boolean }): Promise<UserVocabularyDocument[]>;
     
     updateReviewResult(userId: string, vocabularyId: string, data: Partial<UserVocabularyDocument>): Promise<UserVocabularyDocument | null>;
     
