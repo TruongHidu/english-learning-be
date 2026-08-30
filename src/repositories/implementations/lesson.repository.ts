@@ -69,7 +69,7 @@ export class LessonRepository implements ILessonRepository {
         return LessonModel.findByIdAndUpdate(
             id,
             { $set: data },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
     }
 
@@ -80,7 +80,7 @@ export class LessonRepository implements ILessonRepository {
         return LessonModel.findByIdAndUpdate(
             id,
             { $set: { status } },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
     }
 

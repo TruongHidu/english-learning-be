@@ -4,6 +4,19 @@ import type { AdminTopicService } from "../services/admin-topic.service.js";
 export class AdminTopicController {
     constructor(private readonly topicService: AdminTopicService) {}
 
+    getAll = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const topics = await this.topicService.getAllTopics();
+            res.status(200).json({
+                success: true,
+                message: "Lấy tất cả chủ đề thành công",
+                data: { topics },
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
     getBySection = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
             const { sectionId } = (res.locals.validatedParams ?? req.params) as { sectionId: string };
@@ -11,6 +24,20 @@ export class AdminTopicController {
             res.status(200).json({
                 success: true,
                 message: "Lấy danh sách chủ đề thành công",
+                data: { topics },
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getByCourse = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const { courseId } = req.params as { courseId: string };
+            const topics = await this.topicService.getTopicsByCourse(courseId);
+            res.status(200).json({
+                success: true,
+                message: "Lấy danh sách chủ đề theo khóa học thành công",
                 data: { topics },
             });
         } catch (error) {

@@ -58,25 +58,25 @@ export class AdminQuestionService {
         query: QuestionListQuery,
     ): Promise<PaginatedQuestionResult> {
         const { vocabularies } = await this.vocabularyRepository.findByTopicId(topicId, {
-            limit: 100,
+            limit: 500,
         });
         const vocabularyIds = vocabularies.map((v) => v._id.toString());
 
         if (vocabularyIds.length === 0) {
+            const { questions, total } = await this.questionRepository.findAll(query);
+            const page = query.page ?? 1;
+            const limit = query.limit ?? 20;
+            const totalPages = Math.ceil(total / limit) || 1;
+
             return {
-                questions: [],
-                pagination: {
-                    page: query.page ?? 1,
-                    limit: query.limit ?? 20,
-                    total: 0,
-                    totalPages: 1,
-                },
+                questions: questions.map(mapQuestionToListItemResponse),
+                pagination: { page, limit, total, totalPages },
             };
         }
 
         const { questions, total } = await this.questionRepository.findAll({
             ...query,
-            vocabularyId: vocabularyIds[0], // primary fallback
+            vocabularyIds,
         });
         const page = query.page ?? 1;
         const limit = query.limit ?? 20;
@@ -246,14 +246,8 @@ export class AdminQuestionService {
             throw new AppError("QUESTION_NOT_FOUND", "Không tìm thấy câu hỏi", 404);
         }
 
-        const lessonUsageCount = await this.lessonQuestionRepository.countByQuestionId(questionId);
-        if (lessonUsageCount > 0) {
-            throw new AppError(
-                "QUESTION_IS_USED_BY_LESSON",
-                "Không thể xóa câu hỏi vì đang được sử dụng trong bài học",
-                409,
-            );
-        }
+        // Remove any lesson question associations before deleting
+        await this.lessonQuestionRepository.deleteByQuestionId(questionId).catch(() => {});
 
         await this.questionRepository.deleteById(questionId);
         await Promise.all([

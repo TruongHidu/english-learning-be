@@ -37,6 +37,8 @@ app.get("/api/v1/health", (_req, res) => {
     });
 });
 
+import adminAiRouter from "./routes/admin-ai.routes.js";
+
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/user", userVocabularyRouter);
@@ -50,6 +52,7 @@ app.use("/api/v1/admin", adminTopicRouter);
 app.use("/api/v1/admin", adminLessonRouter);
 app.use("/api/v1/admin", adminVocabularyRouter);
 app.use("/api/v1/admin", adminQuestionRouter);
+app.use("/api/v1/admin/ai", adminAiRouter);
 
 app.use(errorHandler);
 

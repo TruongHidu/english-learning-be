@@ -87,7 +87,7 @@ const learningProgressionService = new LearningProgressionService(
     lessonRepository,
     userLessonProgressRepository,
 );
-const learningService = new LearningService(
+export const learningService = new LearningService(
     lessonRepository,
     lessonQuestionRepository,
     questionRepository,
@@ -133,6 +133,16 @@ export const adminVocabularyController = new AdminVocabularyController(adminVoca
 export const adminQuestionController = new AdminQuestionController(adminQuestionService);
 export const learningController = new LearningController(learningService);
 export const learningPathController = new LearningPathController(learningPathService);
+
+import { AiVocabularyService } from "../services/ai-vocabulary.service.js";
+import { AiQuestionService } from "../services/ai-question.service.js";
+import { AiService } from "../services/ai.service.js";
+import { AdminAiController } from "../controllers/admin-ai.controller.js";
+
+export const aiVocabularyService = new AiVocabularyService();
+export const aiQuestionService = new AiQuestionService();
+export const aiService = new AiService();
+export const adminAiController = new AdminAiController(aiVocabularyService, aiQuestionService);
 
 export const authenticate = createAuthenticate(tokenService);
 export const authorizeAdmin = authorize("ADMIN");

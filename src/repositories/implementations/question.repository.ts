@@ -32,7 +32,12 @@ export class QuestionRepository implements IQuestionRepository {
     ): Promise<{ questions: QuestionDocument[]; total: number }> {
         const filter: Record<string, unknown> = {};
 
-        if (query.vocabularyId) {
+        if (query.vocabularyIds && query.vocabularyIds.length > 0) {
+            filter.$or = [
+                { vocabularyId: { $in: query.vocabularyIds } },
+                { vocabularyIds: { $in: query.vocabularyIds } },
+            ];
+        } else if (query.vocabularyId) {
             filter.$or = [
                 { vocabularyId: query.vocabularyId },
                 { vocabularyIds: query.vocabularyId },
@@ -63,7 +68,7 @@ export class QuestionRepository implements IQuestionRepository {
         }
 
         const page = Math.max(1, query.page ?? 1);
-        const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+        const limit = Math.min(500, Math.max(1, query.limit ?? 500));
         const skip = (page - 1) * limit;
 
         const sortBy = query.sortBy ?? "createdAt";
@@ -211,7 +216,7 @@ export class QuestionRepository implements IQuestionRepository {
         return QuestionModel.findByIdAndUpdate(
             id,
             updateOperation,
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         )
             .select("+audioPublicId +imagePublicId")
             .populate("vocabularyIds vocabularyId", "word meaning")
@@ -225,7 +230,7 @@ export class QuestionRepository implements IQuestionRepository {
         return QuestionModel.findByIdAndUpdate(
             id,
             { $set: { status } },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).populate("vocabularyIds vocabularyId", "word meaning").exec();
     }
 

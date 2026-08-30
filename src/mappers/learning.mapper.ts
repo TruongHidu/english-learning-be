@@ -16,14 +16,38 @@ export const mapLearningQuestionToResponse = (question: QuestionDocument): Learn
     type: question.type,
     content: question.content,
     instruction: question.instruction ?? null,
-    options: question.options
-        ? question.options.map((option) => ({
-              id: (option as unknown as { _id?: { toString(): string } })._id?.toString() ?? null,
-              content: option.content,
-              imageUrl: option.imageUrl ?? null,
-              orderIndex: option.orderIndex,
-          }))
-        : null,
+    options:
+        question.type === "ORDER_SENTENCE"
+            ? question.options && question.options.length > 0
+                ? shuffle(
+                      question.options.map((option) => ({
+                          id: (option as unknown as { _id?: { toString(): string } })._id?.toString() ?? null,
+                          content: option.content,
+                          imageUrl: option.imageUrl ?? null,
+                          orderIndex: option.orderIndex,
+                      })),
+                  )
+                : question.correctAnswer
+                ? shuffle(
+                      String(question.correctAnswer)
+                          .split(/\s+/)
+                          .filter(Boolean)
+                          .map((word: string, idx: number) => ({
+                              id: null,
+                              content: word,
+                              imageUrl: null,
+                              orderIndex: idx + 1,
+                          })),
+                  )
+                : null
+            : question.options
+            ? question.options.map((option) => ({
+                  id: (option as unknown as { _id?: { toString(): string } })._id?.toString() ?? null,
+                  content: option.content,
+                  imageUrl: option.imageUrl ?? null,
+                  orderIndex: option.orderIndex,
+              }))
+            : null,
     matchingLeftItems: question.matchingPairs?.map((pair) => pair.leftValue) ?? null,
     matchingRightItems: question.matchingPairs
         ? shuffle(question.matchingPairs.map((pair) => pair.rightValue))

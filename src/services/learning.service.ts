@@ -354,13 +354,13 @@ export class LearningService {
     }
 
     private checkOrderSentence(correctAnswer: unknown, userAnswer: string | string[]): boolean {
-        if (!Array.isArray(userAnswer) || !Array.isArray(correctAnswer)) return false;
-        if (userAnswer.length !== (correctAnswer as string[]).length) return false;
-        return (correctAnswer as string[]).every((word, idx) => {
-            const submitted = userAnswer[idx] ?? "";
-            const normalize = (str: string) => str.trim().toLowerCase().replace(/\s+/g, " ");
-            return normalize(word) === normalize(submitted);
-        });
+        const userStr = Array.isArray(userAnswer) ? userAnswer.join(" ") : String(userAnswer || "");
+        const targetStr = Array.isArray(correctAnswer)
+            ? (correctAnswer as string[]).join(" ")
+            : String(correctAnswer || "");
+
+        const normalize = (str: string) => str.trim().toLowerCase().replace(/\s+/g, " ");
+        return normalize(userStr) === normalize(targetStr);
     }
 
     private checkMatching(

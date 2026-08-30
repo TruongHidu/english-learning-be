@@ -48,6 +48,10 @@ export class LessonQuestionRepository implements ILessonQuestionRepository {
         await LessonQuestionModel.deleteOne({ lessonId, questionId }).exec();
     }
 
+    public async deleteByQuestionId(questionId: string): Promise<void> {
+        await LessonQuestionModel.deleteMany({ questionId }).exec();
+    }
+
     public async reorder(lessonId: string, questionIds: string[]): Promise<void> {
         const bulkOps = questionIds.map((qId, index) => ({
             updateOne: {

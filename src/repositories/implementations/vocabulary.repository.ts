@@ -42,7 +42,7 @@ export class VocabularyRepository implements IVocabularyRepository {
 
 
         const page = Math.max(1, query.page ?? 1);
-        const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+        const limit = Math.min(500, Math.max(1, query.limit ?? 500));
         const skip = (page - 1) * limit;
 
         const sortBy = query.sortBy ?? "createdAt";
@@ -83,7 +83,7 @@ export class VocabularyRepository implements IVocabularyRepository {
 
 
         const page = Math.max(1, query.page ?? 1);
-        const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+        const limit = Math.min(500, Math.max(1, query.limit ?? 500));
         const skip = (page - 1) * limit;
 
         const sortBy = query.sortBy ?? "createdAt";
@@ -138,7 +138,7 @@ export class VocabularyRepository implements IVocabularyRepository {
         return VocabularyModel.findByIdAndUpdate(
             id,
             { $set: data },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
     }
 
@@ -149,7 +149,7 @@ export class VocabularyRepository implements IVocabularyRepository {
         return VocabularyModel.findByIdAndUpdate(
             id,
             { $set: { status } },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
     }
 

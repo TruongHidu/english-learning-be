@@ -34,7 +34,7 @@ export class LearningSessionRepository implements ILearningSessionRepository {
         return LearningSessionModel.findByIdAndUpdate(
             sessionId,
             { $set: data },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
     }
 }

@@ -7,6 +7,7 @@ import {
 
 export interface ITopicRepository {
     findById(id: string): Promise<TopicDocument | null>;
+    findAll(): Promise<TopicDocument[]>;
     findBySectionId(sectionId: string): Promise<TopicDocument[]>;
     findPublishedBySectionId(sectionId: string): Promise<TopicDocument[]>;
     findPublishedBySectionIds(sectionIds: string[]): Promise<TopicDocument[]>;

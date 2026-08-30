@@ -181,7 +181,7 @@ export class UserVocabularyRepository implements IUserVocabularyRepository {
         return UserVocabularyModel.findOneAndUpdate(
             { userId: new Types.ObjectId(userId), vocabularyId: new Types.ObjectId(vocabularyId) },
             { $set: data },
-            { new: true }
+            { returnDocument: "after" }
         ).exec();
     }
 
@@ -189,7 +189,7 @@ export class UserVocabularyRepository implements IUserVocabularyRepository {
         return UserVocabularyModel.findOneAndUpdate(
             { userId: new Types.ObjectId(userId), vocabularyId: new Types.ObjectId(vocabularyId) },
             { $set: { excludedFromReview: exclude } },
-            { new: true }
+            { returnDocument: "after" }
         ).exec();
     }
 

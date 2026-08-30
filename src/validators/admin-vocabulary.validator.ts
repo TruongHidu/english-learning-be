@@ -65,7 +65,7 @@ export const updateVocabularyStatusSchema = z.object({
 
 export const vocabularyListQuerySchema = z.object({
     page: z.coerce.number().int().min(1).optional().default(1),
-    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+    limit: z.coerce.number().int().min(1).max(500).optional().default(20),
     search: z.string().optional(),
     difficulty: z.enum(VOCABULARY_DIFFICULTIES).optional(),
     status: z.enum(CONTENT_STATUSES).optional(),

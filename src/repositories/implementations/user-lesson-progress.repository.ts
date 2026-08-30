@@ -51,7 +51,7 @@ export class UserLessonProgressRepository implements IUserLessonProgressReposito
         return UserLessonProgressModel.findOneAndUpdate(
             { userId, lessonId },
             { $set: { status } },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
     }
 
@@ -72,7 +72,7 @@ export class UserLessonProgressRepository implements IUserLessonProgressReposito
                     completedAt: data.completedAt,
                 },
             },
-            { new: true, runValidators: true, upsert: true },
+            { returnDocument: "after", runValidators: true, upsert: true },
         ).exec();
     }
 }

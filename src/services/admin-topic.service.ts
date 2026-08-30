@@ -1,4 +1,5 @@
 import { AppError } from "../errors/app-error.js";
+import { TopicModel } from "../models/topic.model.js";
 import { mapTopicToResponse } from "../mappers/topic.mapper.js";
 import type { ILessonRepository } from "../repositories/interfaces/lesson.repository.interface.js";
 import type { ISectionRepository } from "../repositories/interfaces/section.repository.interface.js";
@@ -19,6 +20,16 @@ export class AdminTopicService {
         private readonly vocabularyRepository: IVocabularyRepository,
     ) {}
 
+    async getAllTopics(): Promise<TopicResponse[]> {
+        const topics = await this.topicRepository.findAll();
+        return Promise.all(
+            topics.map(async (topic) => {
+                const lessonCount = await this.lessonRepository.countByTopicId(topic._id.toString());
+                return mapTopicToResponse(topic, lessonCount);
+            })
+        );
+    }
+
     async getTopicsBySection(sectionId: string): Promise<TopicResponse[]> {
         const section = await this.sectionRepository.findById(sectionId);
         if (!section) {
@@ -27,6 +38,22 @@ export class AdminTopicService {
 
         const topics = await this.topicRepository.findBySectionId(sectionId);
         
+        return Promise.all(
+            topics.map(async (topic) => {
+                const lessonCount = await this.lessonRepository.countByTopicId(topic._id.toString());
+                return mapTopicToResponse(topic, lessonCount);
+            })
+        );
+    }
+
+    async getTopicsByCourse(courseId: string): Promise<TopicResponse[]> {
+        const sections = await this.sectionRepository.findByCourseId(courseId);
+        const sectionIds = sections.map((s) => s.id);
+        if (sectionIds.length === 0) return [];
+        const topics = await TopicModel.find({ sectionId: { $in: sectionIds } })
+            .sort({ orderIndex: 1, createdAt: 1 })
+            .exec();
+
         return Promise.all(
             topics.map(async (topic) => {
                 const lessonCount = await this.lessonRepository.countByTopicId(topic._id.toString());

@@ -69,7 +69,7 @@ export class UserRepository implements IUserRepository {
         const document = await UserModel.findByIdAndUpdate(
             userId,
             { $set: { displayName } },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
 
         return document ? toDomainUser(document) : null;
@@ -114,7 +114,7 @@ export class UserRepository implements IUserRepository {
                     "stats.heartUpdatedAt": heartUpdatedAt,
                 },
             },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
 
         return document ? toDomainUser(document) : null;
@@ -143,7 +143,7 @@ export class UserRepository implements IUserRepository {
                     "stats.lastStudyDate": statsUpdate.lastStudyDate,
                 },
             },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
 
         return document ? toDomainUser(document) : null;

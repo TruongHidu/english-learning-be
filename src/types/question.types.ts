@@ -130,6 +130,7 @@ export interface QuestionListQuery {
     search?: string;
     topicId?: string;
     vocabularyId?: string;
+    vocabularyIds?: string[];
     type?: QuestionType;
     difficulty?: VocabularyDifficulty;
     status?: QuestionStatus;
