@@ -2,10 +2,12 @@ import { Schema, model, type HydratedDocument, type Types } from "mongoose";
 
 import { CONTENT_STATUSES, type ContentStatus } from "../types/course.types.js";
 import { VOCABULARY_DIFFICULTIES, type VocabularyDifficulty } from "../types/vocabulary.types.js";
+import { normalizeVocabularyWord } from "../utils/vocabulary-normalization.utils.js";
 
 export interface VocabularyPersistence {
     topicId: Types.ObjectId;
     word: string;
+    normalizedWord?: string;
     meaning: string;
     phonetic?: string;
     partOfSpeech?: string;
@@ -35,6 +37,12 @@ const vocabularySchema = new Schema<VocabularyPersistence>(
             type: String,
             required: true,
             trim: true,
+        },
+        normalizedWord: {
+            type: String,
+            required: true,
+            trim: true,
+            select: false,
         },
         meaning: {
             type: String,
@@ -90,6 +98,7 @@ const vocabularySchema = new Schema<VocabularyPersistence>(
         },
         aiGenerationId: {
             type: Schema.Types.ObjectId,
+            ref: "AIGeneration",
             required: false,
         },
     },
@@ -99,7 +108,19 @@ const vocabularySchema = new Schema<VocabularyPersistence>(
     },
 );
 
-vocabularySchema.index({ topicId: 1, word: 1 });
+vocabularySchema.pre("validate", function normalizeWordBeforeValidation() {
+    this.word = normalizeVocabularyWord(this.word);
+    this.normalizedWord = this.word;
+});
+
+vocabularySchema.index(
+    { topicId: 1, normalizedWord: 1 },
+    {
+        unique: true,
+        name: "uniq_vocabulary_topic_normalized_word",
+        partialFilterExpression: { normalizedWord: { $type: "string" } },
+    },
+);
 vocabularySchema.index({ topicId: 1, status: 1 });
 
 export const VocabularyModel = model<VocabularyPersistence>("Vocabulary", vocabularySchema);

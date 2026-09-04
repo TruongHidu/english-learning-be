@@ -138,14 +138,14 @@ export class AdminQuestionController {
         try {
             const { lessonId } = (res.locals.validatedParams ?? req.params) as { lessonId: string };
             const { questionIds } = req.body;
-            const questions = await this.questionService.assignQuestionsToLesson(
+            const result = await this.questionService.assignQuestionsToLesson(
                 lessonId,
                 questionIds,
             );
-            res.status(201).json({
+            res.status(result.assignedCount > 0 ? 201 : 200).json({
                 success: true,
                 message: "Gán câu hỏi vào bài học thành công",
-                data: { questions },
+                data: result,
             });
         } catch (error) {
             next(error);

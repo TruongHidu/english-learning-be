@@ -37,6 +37,13 @@ import { LearningService } from "../services/learning.service.js";
 import { LearningPathService } from "../services/learning-path.service.js";
 import { LearningProgressionService } from "../services/learning-progression.service.js";
 import { UserStatsService } from "../services/user-stats.service.js";
+import { AiGenerationService } from "../services/ai-generation.service.js";
+import { AiVocabularyService } from "../services/ai-vocabulary.service.js";
+import { AiQuestionService } from "../services/ai-question.service.js";
+import { AIGenerationRepository } from "../repositories/implementations/ai-generation.repository.js";
+import { AiVocabularyCommitRepository } from "../repositories/implementations/ai-vocabulary-commit.repository.js";
+import { AiQuestionCommitRepository } from "../repositories/implementations/ai-question-commit.repository.js";
+import { GeminiContentGenerator } from "../ai/providers/gemini-content-generator.js";
 import { CloudinaryMediaStorage } from "../storage/cloudinary-media-storage.js";
 
 const userRepository = new UserRepository();
@@ -50,6 +57,9 @@ const lessonQuestionRepository = new LessonQuestionRepository();
 const userLessonProgressRepository = new UserLessonProgressRepository();
 const learningSessionRepository = new LearningSessionRepository();
 const userVocabularyRepository = new UserVocabularyRepository();
+const aiGenerationRepository = new AIGenerationRepository();
+const aiVocabularyCommitRepository = new AiVocabularyCommitRepository();
+const aiQuestionCommitRepository = new AiQuestionCommitRepository();
 
 const passwordHasher = new BcryptPasswordHasher();
 const tokenService = new JwtTokenService();
@@ -134,15 +144,50 @@ export const adminQuestionController = new AdminQuestionController(adminQuestion
 export const learningController = new LearningController(learningService);
 export const learningPathController = new LearningPathController(learningPathService);
 
-import { AiVocabularyService } from "../services/ai-vocabulary.service.js";
-import { AiQuestionService } from "../services/ai-question.service.js";
-import { AiService } from "../services/ai.service.js";
 import { AdminAiController } from "../controllers/admin-ai.controller.js";
 
-export const aiVocabularyService = new AiVocabularyService();
-export const aiQuestionService = new AiQuestionService();
-export const aiService = new AiService();
-export const adminAiController = new AdminAiController(aiVocabularyService, aiQuestionService);
+const parsePositiveEnvNumber = (value: string | undefined, fallback: number): number => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const aiContentGenerator = new GeminiContentGenerator({
+    apiKey: process.env.GEMINI_API_KEY,
+    modelName: process.env.AI_MODEL || "gemini-2.0-flash",
+    timeoutMs: parsePositiveEnvNumber(process.env.AI_TIMEOUT_MS, 30_000),
+});
+
+export const aiGenerationService = new AiGenerationService(
+    aiContentGenerator,
+    aiGenerationRepository,
+    topicRepository,
+    sectionRepository,
+    courseRepository,
+    lessonRepository,
+    vocabularyRepository,
+    aiVocabularyCommitRepository,
+    aiQuestionCommitRepository,
+    questionRepository,
+    lessonQuestionRepository,
+    {
+        provider: "gemini",
+        modelName: process.env.AI_MODEL || "gemini-2.0-flash",
+        promptVersion: "v1",
+        maxVocabularies: parsePositiveEnvNumber(process.env.AI_MAX_VOCABULARIES, 20),
+        maxQuestions: parsePositiveEnvNumber(process.env.AI_MAX_QUESTIONS, 50),
+    },
+);
+
+export const aiVocabularyService = new AiVocabularyService(aiGenerationService);
+export const aiQuestionService = new AiQuestionService(
+    aiGenerationService,
+    adminQuestionService,
+);
+export const adminAiController = new AdminAiController(
+    aiVocabularyService,
+    aiQuestionService,
+    aiGenerationService,
+);
 
 export const authenticate = createAuthenticate(tokenService);
 export const authorizeAdmin = authorize("ADMIN");

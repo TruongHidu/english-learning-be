@@ -32,6 +32,8 @@ export interface CreateVocabularyInput {
     audioUrl?: string | null;
     imageUrl?: string | null;
     difficulty?: VocabularyDifficulty;
+    /** Internal metadata set by the AI generation orchestration service. */
+    aiGenerationId?: string | null;
 }
 
 export interface UpdateVocabularyInput {

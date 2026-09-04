@@ -28,6 +28,7 @@ export interface LearningSessionResponse {
     status: LearningSessionStatus;
     heartStart: number;
     heartRemaining: number;
+    requiredScore: number;
     totalQuestions: number;
     correctCount: number;
     wrongCount: number;
@@ -70,6 +71,7 @@ export interface LessonCompletionRewards {
 
 export interface SubmitAnswerResponse {
     isCorrect: boolean;
+    isPassed: boolean;
     /** Chỉ trả về khi sai — để FE hiển thị đáp án đúng */
     correctAnswer: unknown | null;
     /** Giải thích đáp án, có thể null nếu không có */

@@ -1,5 +1,17 @@
+import { Types } from "mongoose";
+
 import { AppError } from "../errors/app-error.js";
-import { mapLearningQuestionToResponse, mapLearningSessionToResponse } from "../mappers/learning.mapper.js";
+import {
+    mapLearningQuestionToResponse,
+    mapLearningSessionToResponse,
+} from "../mappers/learning.mapper.js";
+import type {
+    LearningQuestionSnapshot,
+    LearningQuestionSnapshotMatchingPair,
+    LearningQuestionSnapshotOption,
+    LearningSessionDocument,
+} from "../models/learning-session.model.js";
+import type { QuestionDocument } from "../models/question.model.js";
 import type { ILearningSessionRepository } from "../repositories/interfaces/learning-session.repository.interface.js";
 import type { ILessonRepository } from "../repositories/interfaces/lesson.repository.interface.js";
 import type { ILessonQuestionRepository } from "../repositories/interfaces/lesson-question.repository.interface.js";
@@ -7,11 +19,14 @@ import type { IQuestionRepository } from "../repositories/interfaces/question.re
 import type { IUserLessonProgressRepository } from "../repositories/interfaces/user-lesson-progress.repository.interface.js";
 import type { IUserRepository } from "../repositories/interfaces/user.repository.interface.js";
 import type { IUserVocabularyRepository } from "../repositories/interfaces/user-vocabulary.repository.interface.js";
-import type { StartLessonResponse, SubmitAnswerRequest, SubmitAnswerResponse } from "../types/learning.types.js";
-import type { LearningSessionStatus } from "../models/learning-session.model.js";
-import { VocabularyModel } from "../models/vocabulary.model.js";
-import type { LearningProgressionService } from "./learning-progression.service.js";
+import type {
+    LessonCompletionRewards,
+    StartLessonResponse,
+    SubmitAnswerRequest,
+    SubmitAnswerResponse,
+} from "../types/learning.types.js";
 import type { HeartService } from "./heart.service.js";
+import type { LearningProgressionService } from "./learning-progression.service.js";
 import type { UserStatsService } from "./user-stats.service.js";
 
 export class LearningService {
@@ -44,9 +59,6 @@ export class LearningService {
         }
 
         const user = await this.heartService.syncUserHearts(userId);
-        if (!user) {
-            throw new AppError("USER_NOT_FOUND", "Không tìm thấy người dùng", 404);
-        }
         if (user.stats.currentHeart <= 0) {
             throw new AppError("INSUFFICIENT_HEART", "Bạn không còn tim để bắt đầu bài học", 403);
         }
@@ -60,11 +72,16 @@ export class LearningService {
             );
         }
 
+        const questionSnapshots = questions.map((question) => this.createQuestionSnapshot(question));
+
         await this.learningSessionRepository.abandonInProgressByUserIdAndLessonId(userId, lessonId);
         const session = await this.learningSessionRepository.create(userId, lessonId, {
             heartStart: user.stats.currentHeart,
             heartRemaining: user.stats.currentHeart,
-            totalQuestions: questions.length,
+            requiredScore: lesson.requiredScore,
+            totalQuestions: questionSnapshots.length,
+            questionIds: questionSnapshots.map((snapshot) => snapshot.questionId.toString()),
+            questionSnapshots,
         });
 
         if (!access.lesson.isCompleted) {
@@ -78,9 +95,9 @@ export class LearningService {
                 name: lesson.name,
                 description: lesson.description ?? null,
                 requiredScore: lesson.requiredScore,
-                questionCount: questions.length,
+                questionCount: questionSnapshots.length,
             },
-            progress: { currentQuestionIndex: 0, totalQuestions: questions.length },
+            progress: { currentQuestionIndex: 0, totalQuestions: questionSnapshots.length },
             hearts: {
                 current: user.stats.currentHeart,
                 max: user.stats.maxHeart,
@@ -90,7 +107,7 @@ export class LearningService {
         };
     }
 
-    private async getPublishedLessonQuestions(lessonId: string) {
+    private async getPublishedLessonQuestions(lessonId: string): Promise<QuestionDocument[]> {
         const assignments = await this.lessonQuestionRepository.findByLessonId(lessonId);
         if (assignments.length === 0) return [];
 
@@ -105,188 +122,102 @@ export class LearningService {
 
         return assignments
             .map((assignment) => publishedQuestions.get(assignment.questionId.toString()) ?? null)
-            .filter((question): question is NonNullable<typeof question> => question !== null);
+            .filter((question): question is QuestionDocument => question !== null);
     }
 
-    async submitAnswer(userId: string, sessionId: string, body: SubmitAnswerRequest): Promise<SubmitAnswerResponse> {
+    async submitAnswer(
+        userId: string,
+        sessionId: string,
+        body: SubmitAnswerRequest,
+    ): Promise<SubmitAnswerResponse> {
         const session = await this.learningSessionRepository.findByIdAndUserId(sessionId, userId);
-        if (!session) {
-            throw new AppError("SESSION_NOT_FOUND", "Không tìm thấy phiên học", 404);
-        }
-        if (session.status !== "IN_PROGRESS") {
+        this.assertSessionCanReceiveAnswer(session);
+
+        const snapshot = this.findQuestionSnapshot(session, body.questionId);
+        if (!snapshot) {
             throw new AppError(
-                "SESSION_NOT_IN_PROGRESS",
-                "Phiên học không ở trạng thái đang học",
+                "QUESTION_NOT_IN_SESSION",
+                "Câu hỏi không thuộc phiên học hiện tại",
+                400,
+            );
+        }
+
+        if ((session.answeredQuestionIds ?? []).some((questionId) => questionId.toString() === body.questionId)) {
+            throw new AppError(
+                "QUESTION_ALREADY_ANSWERED",
+                "Câu hỏi này đã được trả lời trong phiên học",
                 409,
             );
         }
-        if (session.heartRemaining <= 0) {
-            throw new AppError("INSUFFICIENT_HEART", "Bạn đã hết tim", 403);
+
+        const isCorrect = this.checkAnswer(
+            snapshot.type,
+            snapshot.correctAnswer,
+            body.answer,
+            snapshot.options,
+            snapshot.matchingPairs,
+        );
+
+        const updatedSession = await this.learningSessionRepository.recordAnswer({
+            sessionId,
+            userId,
+            questionId: body.questionId,
+            isCorrect,
+        });
+
+        if (!updatedSession) {
+            // A concurrent request may have answered this question between the
+            // read above and the conditional update. Re-read to return the
+            // correct domain error instead of silently counting twice.
+            const latestSession = await this.learningSessionRepository.findByIdAndUserId(sessionId, userId);
+            this.assertSessionCanReceiveAnswer(latestSession);
+
+            const latestSnapshot = this.findQuestionSnapshot(latestSession, body.questionId);
+            if (!latestSnapshot) {
+                throw new AppError(
+                    "QUESTION_NOT_IN_SESSION",
+                    "Câu hỏi không thuộc phiên học hiện tại",
+                    400,
+                );
+            }
+            if ((latestSession.answeredQuestionIds ?? []).some((questionId) => questionId.toString() === body.questionId)) {
+                throw new AppError(
+                    "QUESTION_ALREADY_ANSWERED",
+                    "Câu hỏi này đã được trả lời trong phiên học",
+                    409,
+                );
+            }
+            throw new AppError(
+                "SESSION_UPDATE_CONFLICT",
+                "Không thể cập nhật phiên học, vui lòng thử lại",
+                409,
+            );
         }
 
-        const question = await this.questionRepository.findById(body.questionId);
-        if (!question) {
-            throw new AppError("QUESTION_NOT_FOUND", "Không tìm thấy câu hỏi", 404);
-        }
+        let rewards: LessonCompletionRewards | null = null;
+        const isTerminal = updatedSession.status === "COMPLETED" || updatedSession.status === "FAILED";
+        const requiredScore = updatedSession.requiredScore ?? 80;
+        const isPassed = updatedSession.status === "COMPLETED"
+            && updatedSession.score >= requiredScore;
 
-        const isCorrect = this.checkAnswer(question.type, question.correctAnswer, body.answer, question.options, question.matchingPairs);
-
-        const newCorrectCount = session.correctCount + (isCorrect ? 1 : 0);
-        const newWrongCount = session.wrongCount + (isCorrect ? 0 : 1);
-        const newHeartRemaining = isCorrect ? session.heartRemaining : session.heartRemaining - 1;
-        const newScore = session.totalQuestions > 0
-            ? Math.round((newCorrectCount / session.totalQuestions) * 100)
-            : 0;
-
-        let newStatus: LearningSessionStatus = session.status;
-        if (newHeartRemaining <= 0) {
-            newStatus = "FAILED";
-        } else if (newCorrectCount + newWrongCount === session.totalQuestions) {
-            newStatus = "COMPLETED";
-        }
-
-        let rewardsPayload = null;
-
-        if (newStatus === "COMPLETED") {
-            const now = new Date();
-            const currentLesson = await this.lessonRepository.findById(session.lessonId.toString());
-            const requiredScore = currentLesson?.requiredScore ?? 80;
-
-            const existingProgress = await this.userLessonProgressRepository.findByUserIdAndLessonId(userId, session.lessonId.toString());
-            const isAlreadyCompleted = existingProgress?.status === "COMPLETED";
-
-            const { xpEarned, diamondEarned } = this.userStatsService.calculateLessonRewards({
-                correctCount: newCorrectCount,
-                totalQuestions: session.totalQuestions,
-                requiredScore,
-                isAlreadyCompleted,
-            });
-
-            await this.learningSessionRepository.updateAfterAnswer(sessionId, {
-                correctCount: newCorrectCount,
-                wrongCount: newWrongCount,
-                heartRemaining: newHeartRemaining,
-                score: newScore,
-                status: newStatus,
-                xpEarned,
-                diamondEarned,
-                completedAt: now,
-            });
-
-            const prevBestScore = existingProgress?.bestScore ?? 0;
-            const prevAttempts = existingProgress?.totalAttempts ?? 0;
-
-            await this.userLessonProgressRepository.completeLesson(
+        if (isTerminal) {
+            const terminalSession = await this.learningSessionRepository.claimTerminalProcessing(
+                sessionId,
                 userId,
-                session.lessonId.toString(),
-                {
-                    score: newScore,
-                    bestScore: Math.max(prevBestScore, newScore),
-                    totalAttempts: prevAttempts + 1,
-                    correctCount: newCorrectCount,
-                    wrongCount: newWrongCount,
-                    completedAt: now,
-                },
             );
 
-            const currentUser = await this.userRepository.findById(userId);
-            let updatedStats = {
-                totalXp: currentUser?.stats.totalXp ?? 0,
-                level: currentUser?.stats.level ?? 1,
-                diamond: currentUser?.stats.diamond ?? 0,
-                currentStreak: currentUser?.stats.currentStreak ?? 0,
-                longestStreak: currentUser?.stats.longestStreak ?? 0,
-                lastStudyDate: now,
-            };
-
-            if (currentUser) {
+            if (terminalSession) {
                 try {
-                    updatedStats = await this.userStatsService.applyLessonCompletionStats(
-                        userId,
-                        currentUser.stats,
-                        xpEarned,
-                        diamondEarned,
-                        now,
-                    );
-                } catch (err) {
-                    console.error("Error updating user stats:", err);
-                }
-            }
-
-            const lessonQuestions = await this.getPublishedLessonQuestions(session.lessonId.toString());
-            const vocabIdSet = new Set<string>();
-            for (const q of lessonQuestions) {
-                if (q.vocabularyId) {
-                    vocabIdSet.add(q.vocabularyId.toString());
-                }
-                if (q.vocabularyIds && q.vocabularyIds.length > 0) {
-                    for (const vId of q.vocabularyIds) {
-                        vocabIdSet.add(vId.toString());
+                    if (isPassed) {
+                        rewards = await this.handlePassedSession(userId, terminalSession);
+                    } else {
+                        await this.handleFailedSession(userId, terminalSession);
                     }
-                }
-                if (q.matchingPairs && q.matchingPairs.length > 0) {
-                    for (const pair of q.matchingPairs) {
-                        if (pair.vocabularyId) {
-                            vocabIdSet.add(pair.vocabularyId.toString());
-                        }
-                    }
+                } catch (error) {
+                    await this.learningSessionRepository.releaseTerminalProcessing(sessionId, userId);
+                    throw error;
                 }
             }
-
-            if (vocabIdSet.size === 0 && currentLesson?.topicId) {
-                const topicVocabs = await VocabularyModel.find({
-                    topicId: currentLesson.topicId,
-                    status: "PUBLISHED",
-                }).exec();
-                for (const v of topicVocabs) {
-                    vocabIdSet.add(v._id.toString());
-                }
-            }
-
-            const learnedVocabularyIds = Array.from(vocabIdSet);
-
-            try {
-                if (currentLesson?.topicId && currentLesson?._id) {
-                    await this.userVocabularyRepository.upsertLearnedVocabularies(userId, learnedVocabularyIds, currentLesson.topicId.toString(), currentLesson._id.toString());
-                }
-            } catch (err) {
-                console.error("Error saving learned vocabularies:", err);
-            }
-
-            let isNextLessonUnlocked = false;
-            if (newScore >= requiredScore && currentLesson) {
-                try {
-                    const nextLesson = await this.lessonRepository.findNextLesson(
-                        currentLesson.topicId.toString(),
-                        currentLesson.orderIndex,
-                    );
-                    if (nextLesson) {
-                        await this.userLessonProgressRepository.upsertInProgress(userId, nextLesson.id.toString());
-                        isNextLessonUnlocked = true;
-                    }
-                } catch (err) {
-                    console.error("Error unlocking next lesson:", err);
-                }
-            }
-
-            rewardsPayload = {
-                xpEarned,
-                diamondEarned,
-                totalXp: updatedStats.totalXp,
-                level: updatedStats.level,
-                currentStreak: updatedStats.currentStreak,
-                longestStreak: updatedStats.longestStreak,
-                learnedVocabularyIds,
-                isNextLessonUnlocked,
-            };
-        } else {
-            await this.learningSessionRepository.updateAfterAnswer(sessionId, {
-                correctCount: newCorrectCount,
-                wrongCount: newWrongCount,
-                heartRemaining: newHeartRemaining,
-                score: newScore,
-                status: newStatus,
-            });
         }
 
         let nextHeartAt: Date | null = null;
@@ -300,24 +231,229 @@ export class LearningService {
 
         return {
             isCorrect,
-            correctAnswer: isCorrect ? null : question.correctAnswer ?? null,
-            explanation: question.explanation ?? null,
-            heartsRemaining: newHeartRemaining,
+            isPassed,
+            correctAnswer: isCorrect ? null : this.getCorrectAnswer(snapshot),
+            explanation: snapshot.explanation ?? null,
+            heartsRemaining: updatedSession.heartRemaining,
             nextHeartAt: nextHeartAt ? nextHeartAt.toISOString() : null,
-            sessionStatus: newStatus,
-            correctCount: newCorrectCount,
-            wrongCount: newWrongCount,
-            score: newScore,
-            rewards: rewardsPayload,
+            sessionStatus: updatedSession.status,
+            correctCount: updatedSession.correctCount,
+            wrongCount: updatedSession.wrongCount,
+            score: updatedSession.score,
+            rewards,
         };
+    }
+
+    private assertSessionCanReceiveAnswer(session: LearningSessionDocument | null): asserts session is LearningSessionDocument {
+        if (!session) {
+            throw new AppError("SESSION_NOT_FOUND", "Không tìm thấy phiên học", 404);
+        }
+        if (session.status !== "IN_PROGRESS") {
+            throw new AppError(
+                "SESSION_NOT_IN_PROGRESS",
+                "Phiên học không ở trạng thái đang học",
+                409,
+            );
+        }
+        if (session.heartRemaining <= 0) {
+            throw new AppError("INSUFFICIENT_HEART", "Bạn đã hết tim", 403);
+        }
+    }
+
+    private findQuestionSnapshot(
+        session: LearningSessionDocument,
+        questionId: string,
+    ): LearningQuestionSnapshot | null {
+        return (session.questionSnapshots ?? []).find(
+            (snapshot) => snapshot.questionId.toString() === questionId,
+        ) ?? null;
+    }
+
+    private createQuestionSnapshot(question: QuestionDocument): LearningQuestionSnapshot {
+        const vocabularyIds: Types.ObjectId[] = [];
+        const addVocabularyId = (value: unknown): void => {
+            const vocabularyId = this.toObjectId(value);
+            if (vocabularyId && !vocabularyIds.some((id) => id.equals(vocabularyId))) {
+                vocabularyIds.push(vocabularyId);
+            }
+        };
+
+        addVocabularyId(question.vocabularyId);
+        question.vocabularyIds?.forEach(addVocabularyId);
+
+        const matchingPairs: LearningQuestionSnapshotMatchingPair[] | undefined = question.matchingPairs?.map(
+            (pair) => {
+                addVocabularyId(pair.vocabularyId);
+                const vocabularyId = this.toObjectId(pair.vocabularyId);
+                return {
+                    vocabularyId,
+                    leftValue: pair.leftValue,
+                    rightValue: pair.rightValue,
+                    orderIndex: pair.orderIndex,
+                };
+            },
+        );
+
+        const options: LearningQuestionSnapshotOption[] | undefined = question.options?.map((option) => {
+            const optionWithId = option as unknown as { _id?: Types.ObjectId };
+            return {
+                optionId: optionWithId._id,
+                content: option.content,
+                isCorrect: option.isCorrect,
+                orderIndex: option.orderIndex,
+            };
+        });
+
+        return {
+            questionId: question._id,
+            type: question.type,
+            correctAnswer: question.correctAnswer,
+            options: options && options.length > 0 ? options : undefined,
+            matchingPairs: matchingPairs && matchingPairs.length > 0 ? matchingPairs : undefined,
+            vocabularyIds: vocabularyIds.length > 0 ? vocabularyIds : undefined,
+            explanation: question.explanation,
+        };
+    }
+
+    private toObjectId(value: unknown): Types.ObjectId | undefined {
+        if (value instanceof Types.ObjectId) return value;
+        if (typeof value === "string" && Types.ObjectId.isValid(value)) {
+            return new Types.ObjectId(value);
+        }
+        if (value && typeof value === "object" && "_id" in value) {
+            return this.toObjectId((value as { _id?: unknown })._id);
+        }
+        return undefined;
+    }
+
+    private async handlePassedSession(
+        userId: string,
+        session: LearningSessionDocument,
+    ): Promise<LessonCompletionRewards> {
+        const existingProgress = await this.userLessonProgressRepository.findByUserIdAndLessonId(
+            userId,
+            session.lessonId.toString(),
+        );
+        const isAlreadyCompleted = existingProgress?.status === "COMPLETED";
+        const reward = this.userStatsService.calculateLessonRewards({
+            correctCount: session.correctCount,
+            totalQuestions: session.totalQuestions,
+            requiredScore: session.requiredScore ?? 80,
+            isAlreadyCompleted,
+        });
+
+        const previousBestScore = existingProgress?.bestScore ?? 0;
+        const previousAttempts = existingProgress?.totalAttempts ?? 0;
+        const now = session.completedAt ?? new Date();
+
+        await this.userLessonProgressRepository.completeLesson(
+            userId,
+            session.lessonId.toString(),
+            {
+                score: session.score,
+                bestScore: Math.max(previousBestScore, session.score),
+                totalAttempts: previousAttempts + 1,
+                correctCount: session.correctCount,
+                wrongCount: session.wrongCount,
+                completedAt: now,
+            },
+        );
+
+        const currentUser = await this.userRepository.findById(userId);
+        const updatedStats = currentUser
+            ? await this.userStatsService.applyLessonCompletionStats(
+                  userId,
+                  currentUser.stats,
+                  reward.xpEarned,
+                  reward.diamondEarned,
+                  now,
+              )
+            : {
+                  totalXp: 0,
+                  level: 1,
+                  diamond: 0,
+                  currentStreak: 0,
+                  longestStreak: 0,
+                  lastStudyDate: now,
+              };
+
+        const learnedVocabularyIds = this.getLearnedVocabularyIds(session);
+        if (learnedVocabularyIds.length > 0) {
+            const lesson = await this.lessonRepository.findById(session.lessonId.toString());
+            if (lesson?.topicId) {
+                await this.userVocabularyRepository.upsertLearnedVocabularies(
+                    userId,
+                    learnedVocabularyIds,
+                    lesson.topicId.toString(),
+                    session.lessonId.toString(),
+                );
+            }
+        }
+
+        let isNextLessonUnlocked = false;
+        const currentLesson = await this.lessonRepository.findById(session.lessonId.toString());
+        if (currentLesson) {
+            const nextLesson = await this.lessonRepository.findNextLesson(
+                currentLesson.topicId.toString(),
+                currentLesson.orderIndex,
+            );
+            if (nextLesson) {
+                await this.userLessonProgressRepository.upsertInProgress(userId, nextLesson.id.toString());
+                isNextLessonUnlocked = true;
+            }
+        }
+
+        return {
+            xpEarned: reward.xpEarned,
+            diamondEarned: reward.diamondEarned,
+            totalXp: updatedStats.totalXp,
+            level: updatedStats.level,
+            currentStreak: updatedStats.currentStreak,
+            longestStreak: updatedStats.longestStreak,
+            learnedVocabularyIds,
+            isNextLessonUnlocked,
+        };
+    }
+
+    private async handleFailedSession(userId: string, session: LearningSessionDocument): Promise<void> {
+        const existingProgress = await this.userLessonProgressRepository.findByUserIdAndLessonId(
+            userId,
+            session.lessonId.toString(),
+        );
+        await this.userLessonProgressRepository.recordFailedAttempt(
+            userId,
+            session.lessonId.toString(),
+            {
+                score: session.score,
+                bestScore: Math.max(existingProgress?.bestScore ?? 0, session.score),
+                totalAttempts: (existingProgress?.totalAttempts ?? 0) + 1,
+                correctCount: session.correctCount,
+                wrongCount: session.wrongCount,
+            },
+        );
+    }
+
+    private getLearnedVocabularyIds(session: LearningSessionDocument): string[] {
+        const vocabularyIds = new Set<string>();
+        for (const snapshot of session.questionSnapshots ?? []) {
+            for (const vocabularyId of snapshot.vocabularyIds ?? []) {
+                vocabularyIds.add(vocabularyId.toString());
+            }
+        }
+        return Array.from(vocabularyIds);
+    }
+
+    private getCorrectAnswer(snapshot: LearningQuestionSnapshot): unknown | null {
+        if (snapshot.correctAnswer !== undefined) return snapshot.correctAnswer;
+        return snapshot.options?.find((option) => option.isCorrect)?.content ?? null;
     }
 
     private checkAnswer(
         questionType: string,
         correctAnswer: unknown,
         userAnswer: string | string[],
-        options?: Array<{ _id?: unknown; content: string; isCorrect: boolean }> | null,
-        matchingPairs?: Array<{ leftValue: string; rightValue: string }> | null,
+        options?: LearningQuestionSnapshotOption[],
+        matchingPairs?: LearningQuestionSnapshotMatchingPair[],
     ): boolean {
         switch (questionType) {
             case "MULTIPLE_CHOICE":
@@ -337,35 +473,34 @@ export class LearningService {
 
     private checkMultipleChoice(
         userAnswer: string | string[],
-        options?: Array<{ _id?: unknown; content: string; isCorrect: boolean }> | null,
+        options?: LearningQuestionSnapshotOption[],
     ): boolean {
         if (typeof userAnswer !== "string" || !options) return false;
-        const correctOption = options.find((o) => {
-            const idStr = o._id?.toString() || "";
-            return idStr === userAnswer || o._id === userAnswer || o.content === userAnswer;
+        const selectedOption = options.find((option) => {
+            const optionId = option.optionId?.toString();
+            return optionId === userAnswer || option.content === userAnswer;
         });
-        return correctOption?.isCorrect === true;
+        return selectedOption?.isCorrect === true;
     }
 
     private checkTextBased(correctAnswer: unknown, userAnswer: string | string[]): boolean {
         if (typeof userAnswer !== "string" || typeof correctAnswer !== "string") return false;
-        const normalize = (str: string) => str.trim().toLowerCase().replace(/\s+/g, " ");
+        const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
         return normalize(userAnswer) === normalize(correctAnswer);
     }
 
     private checkOrderSentence(correctAnswer: unknown, userAnswer: string | string[]): boolean {
-        const userStr = Array.isArray(userAnswer) ? userAnswer.join(" ") : String(userAnswer || "");
-        const targetStr = Array.isArray(correctAnswer)
-            ? (correctAnswer as string[]).join(" ")
+        const userText = Array.isArray(userAnswer) ? userAnswer.join(" ") : String(userAnswer || "");
+        const targetText = Array.isArray(correctAnswer)
+            ? correctAnswer.join(" ")
             : String(correctAnswer || "");
-
-        const normalize = (str: string) => str.trim().toLowerCase().replace(/\s+/g, " ");
-        return normalize(userStr) === normalize(targetStr);
+        const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
+        return normalize(userText) === normalize(targetText);
     }
 
     private checkMatching(
         userAnswer: string | string[],
-        matchingPairs?: Array<{ leftValue: string; rightValue: string }> | null,
+        matchingPairs?: LearningQuestionSnapshotMatchingPair[],
     ): boolean {
         if (!Array.isArray(userAnswer) || !matchingPairs || userAnswer.length !== matchingPairs.length) {
             return false;
@@ -375,7 +510,9 @@ export class LearningService {
             const expected = `${pair.leftValue.trim()}||${pair.rightValue.trim()}`.toLowerCase();
             const expectedDash = `${pair.leftValue.trim()}-${pair.rightValue.trim()}`.toLowerCase();
             return userAnswer.some((submittedItem) => {
-                const submitted = (typeof submittedItem === "string" ? submittedItem : "").trim().toLowerCase();
+                const submitted = (typeof submittedItem === "string" ? submittedItem : "")
+                    .trim()
+                    .toLowerCase();
                 return submitted === expected || submitted === expectedDash;
             });
         });

@@ -65,6 +65,7 @@ export const mapLearningSessionToResponse = (
     status: session.status,
     heartStart: session.heartStart,
     heartRemaining: session.heartRemaining,
+    requiredScore: session.requiredScore ?? 80,
     totalQuestions: session.totalQuestions,
     correctCount: session.correctCount,
     wrongCount: session.wrongCount,

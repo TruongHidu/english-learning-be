@@ -1,46 +1,26 @@
-import { AiVocabularyService, type GenerateVocabulariesInput } from "./ai-vocabulary.service.js";
-import { AiQuestionService, type GenerateQuestionsInput } from "./ai-question.service.js";
+import type { AiGenerationService } from "./ai-generation.service.js";
+import type {
+    CreateQuestionsGenerationInput,
+    GenerateQuestionsResult,
+    GenerateVocabulariesInput,
+    GenerateVocabulariesResult,
+} from "../types/ai.types.js";
 
-export type { GenerateVocabulariesInput } from "./ai-vocabulary.service.js";
-export type { GenerateQuestionsInput } from "./ai-question.service.js";
+export type { GenerateVocabulariesInput } from "../types/ai.types.js";
+export type { CreateQuestionsGenerationInput as GenerateQuestionsInput } from "../types/ai.types.js";
 
 /**
- * AiService Facade wrapper maintaining backward compatibility.
- * Delegates vocabulary tasks to AiVocabularyService and question tasks to AiQuestionService.
+ * Legacy facade kept for callers outside the current HTTP routes. The active
+ * container does not instantiate this class; all work is delegated through DI.
  */
 export class AiService {
-    private readonly aiVocabularyService: AiVocabularyService;
-    private readonly aiQuestionService: AiQuestionService;
+    constructor(private readonly aiGenerationService: AiGenerationService) {}
 
-    constructor(
-        aiVocabularyService?: AiVocabularyService,
-        aiQuestionService?: AiQuestionService
-    ) {
-        this.aiVocabularyService = aiVocabularyService || new AiVocabularyService();
-        this.aiQuestionService = aiQuestionService || new AiQuestionService();
+    generateVocabularies(adminId: string, input: GenerateVocabulariesInput): Promise<GenerateVocabulariesResult> {
+        return this.aiGenerationService.generateVocabularies(adminId, input);
     }
 
-    async generateVocabularies(input: GenerateVocabulariesInput) {
-        return this.aiVocabularyService.generateVocabularies(input);
-    }
-
-    async generateQuestions(input: GenerateQuestionsInput) {
-        return this.aiQuestionService.generateQuestions(input);
-    }
-
-    async bulkPublishVocabularies(ids: string[]) {
-        return this.aiVocabularyService.bulkPublishVocabularies(ids);
-    }
-
-    async bulkPublishQuestions(ids: string[]) {
-        return this.aiQuestionService.bulkPublishQuestions(ids);
-    }
-
-    async bulkDeleteVocabularies(ids: string[]) {
-        return this.aiVocabularyService.bulkDeleteVocabularies(ids);
-    }
-
-    async bulkDeleteQuestions(ids: string[]) {
-        return this.aiQuestionService.bulkDeleteQuestions(ids);
+    generateQuestions(adminId: string, input: CreateQuestionsGenerationInput): Promise<GenerateQuestionsResult> {
+        return this.aiGenerationService.generateQuestions(adminId, input);
     }
 }

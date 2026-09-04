@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "test": "tsc -p tsconfig.test.json && node --test .test-dist/tests/learning-progression.service.test.js",
+    "test": "tsc -p tsconfig.test.json && node --test .test-dist/tests/*.test.js",
+    "check:vocabulary-duplicates": "tsx src/scripts/migrate-vocabulary-normalized-word.ts --check",
+    "migrate:vocabulary-normalized": "tsx src/scripts/migrate-vocabulary-normalized-word.ts",
+    "check:question-duplicates": "tsx src/scripts/migrate-question-dedupe-key.ts --check",
+    "migrate:question-dedupe": "tsx src/scripts/migrate-question-dedupe-key.ts",
     "start": "node dist/server.js"
   },
   "repository": {

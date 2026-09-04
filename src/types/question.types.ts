@@ -1,4 +1,5 @@
 import type { PaginationMeta } from "./course.types.js";
+import type { LessonResponse } from "./lesson.types.js";
 import type { VocabularyDifficulty } from "./vocabulary.types.js";
 
 export const QUESTION_TYPES = [
@@ -154,6 +155,13 @@ export interface LessonQuestionResponse {
 
 export interface AssignQuestionsInput {
     questionIds: string[];
+}
+
+export interface AssignQuestionsResult {
+    lesson: LessonResponse;
+    questions: LessonQuestionResponse[];
+    assignedCount: number;
+    skippedCount: number;
 }
 
 export interface ReorderQuestionsInput {
