@@ -48,6 +48,10 @@ import { AiQuestionCommitRepository } from "../repositories/implementations/ai-q
 import { GeminiContentGenerator } from "../ai/providers/gemini-content-generator.js";
 import { CloudinaryMediaStorage } from "../storage/cloudinary-media-storage.js";
 import { DiamondTransactionRepository } from "../repositories/implementations/diamond-transaction.repository.js";
+import { DiamondPackageRepository } from "../repositories/implementations/diamond-package.repository.js";
+import { AdminDiamondPackageService } from "../services/admin-diamond-package.service.js";
+import { AdminDiamondPackageController } from "../controllers/admin-diamond-package.controller.js";
+import { realtimeService } from "../services/realtime.service.js";
 import { ShopService } from "../services/shop.service.js";
 import { ShopController } from "../controllers/shop.controller.js";
 
@@ -63,6 +67,7 @@ const userLessonProgressRepository = new UserLessonProgressRepository();
 const learningSessionRepository = new LearningSessionRepository();
 const userVocabularyRepository = new UserVocabularyRepository();
 const diamondTransactionRepository = new DiamondTransactionRepository();
+const diamondPackageRepository = new DiamondPackageRepository();
 const aiGenerationRepository = new AIGenerationRepository();
 const aiVocabularyCommitRepository = new AiVocabularyCommitRepository();
 const aiQuestionCommitRepository = new AiQuestionCommitRepository();
@@ -116,7 +121,7 @@ export const learningService = new LearningService(
     userVocabularyRepository,
 );
 const learningPathService = new LearningPathService(learningProgressionService);
-const shopService = new ShopService(userRepository, heartService, diamondTransactionRepository);
+const shopService = new ShopService(userRepository, heartService, diamondTransactionRepository, diamondPackageRepository);
 
 export const adminBootstrapService = new AdminBootstrapService(userRepository, passwordHasher);
 
@@ -203,3 +208,6 @@ export const authorizeUser = authorize("USER");
 
 const adminDiamondService = new AdminDiamondService();
 export const adminDiamondController = new AdminDiamondController(adminDiamondService);
+
+const adminDiamondPackageService = new AdminDiamondPackageService(diamondPackageRepository, realtimeService);
+export const adminDiamondPackageController = new AdminDiamondPackageController(adminDiamondPackageService);

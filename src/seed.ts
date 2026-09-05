@@ -7,6 +7,7 @@ import { LessonModel } from "./models/lesson.model.js";
 import { VocabularyModel } from "./models/vocabulary.model.js";
 import { QuestionModel } from "./models/question.model.js";
 import { LessonQuestionModel } from "./models/lesson-question.model.js";
+import { DiamondPackageModel } from "./models/diamond-package.model.js";
 
 async function runSeed() {
     try {
@@ -177,7 +178,52 @@ async function runSeed() {
         await LessonQuestionModel.create({ lessonId: lesson._id, questionId: q4._id, orderIndex: 4 });
         await LessonQuestionModel.create({ lessonId: lesson._id, questionId: q5._id, orderIndex: 5 });
 
-        console.log("Mock data inserted successfully!");
+        // Seed default Diamond Packages (Idempotent by code)
+        const defaultDiamondPackages = [
+            {
+                code: "DIAMOND_SMALL",
+                name: "Túi Đá Quý",
+                diamondAmount: 100,
+                bonusDiamond: 0,
+                price: 19000,
+                currency: "VND",
+                status: "ACTIVE",
+                orderIndex: 1,
+                description: "Gói phù hợp cho người mới",
+            },
+            {
+                code: "DIAMOND_MEDIUM",
+                name: "Rương Bạc",
+                diamondAmount: 500,
+                bonusDiamond: 50,
+                price: 49000,
+                currency: "VND",
+                status: "ACTIVE",
+                orderIndex: 2,
+                description: "Gói tiết kiệm phổ biến nhất",
+            },
+            {
+                code: "DIAMOND_LARGE",
+                name: "Kho Báu Hoàng Gia",
+                diamondAmount: 1000,
+                bonusDiamond: 200,
+                price: 99000,
+                currency: "VND",
+                status: "ACTIVE",
+                orderIndex: 3,
+                description: "Gói ưu đãi tốt nhất cho học viên chăm chỉ",
+            },
+        ];
+
+        for (const pkg of defaultDiamondPackages) {
+            await DiamondPackageModel.findOneAndUpdate(
+                { code: pkg.code },
+                { $setOnInsert: pkg },
+                { upsert: true, new: true },
+            );
+        }
+
+        console.log("Mock data & diamond packages inserted successfully!");
     } catch (err) {
         console.error("Error inserting mock data:", err);
     } finally {

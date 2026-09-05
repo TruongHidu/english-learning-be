@@ -1,4 +1,5 @@
 import adminDiamondRouter from './routes/admin-diamond.routes.js';
+import adminDiamondPackageRouter from './routes/admin-diamond-package.routes.js';
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -58,6 +59,7 @@ app.use("/api/v1/admin", adminQuestionRouter);
 app.use("/api/v1/admin", adminTopicAiRouter);
 app.use("/api/v1/admin/ai", adminAiRouter);
 app.use("/api/v1/admin", adminDiamondRouter);
+app.use("/api/v1/admin/diamond-packages", adminDiamondPackageRouter);
 
 app.use(errorHandler);
 

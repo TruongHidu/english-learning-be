@@ -11,6 +11,18 @@ export interface ShopItemResponse {
     disabledReason: "HEART_ALREADY_FULL" | "INSUFFICIENT_DIAMOND" | null;
 }
 
+export interface ShopDiamondPackage {
+    id: string;
+    name: string;
+    diamondAmount: number;
+    bonusDiamond: number;
+    totalDiamond: number;
+    price: number;
+    currency: "VND";
+    description?: string;
+    orderIndex: number;
+}
+
 export interface ShopResponse {
     user: {
         diamond: number;
@@ -19,7 +31,7 @@ export interface ShopResponse {
         nextHeartAt: string | null;
     };
     items: ShopItemResponse[];
-    diamondPackages: unknown[];
+    diamondPackages: ShopDiamondPackage[];
 }
 
 export interface PurchaseHeartResponse {
