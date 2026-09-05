@@ -1,0 +1,2 @@
+export const HEART_PURCHASE_DIAMOND_COST = 20;
+export const HEART_PURCHASE_QUANTITY = 1;

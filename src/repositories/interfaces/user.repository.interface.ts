@@ -1,3 +1,4 @@
+import type { ClientSession } from "mongoose";
 import type { AuthProvider, User, UserRole, UserStats, UserStatus } from "../../types/auth.types.js";
 
 export interface CreateUserData {
@@ -38,4 +39,15 @@ export interface IUserRepository {
             lastStudyDate: Date;
         },
     ): Promise<User | null>;
+    purchaseHeart(
+        userId: string,
+        diamondCost: number,
+        session?: ClientSession,
+    ): Promise<{
+        user: User;
+        diamondBefore: number;
+        diamondAfter: number;
+        heartBefore: number;
+        heartAfter: number;
+    } | null>;
 }

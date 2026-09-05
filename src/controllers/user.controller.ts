@@ -2,9 +2,14 @@ import type { NextFunction, Request, Response } from "express";
 
 import type { UserService } from "../services/user.service.js";
 import type { ChangePasswordInput, UpdateDisplayNameInput } from "../types/user.types.js";
+import { realtimeService } from "../services/realtime.service.js";
 
 export class UserController {
     constructor(private readonly userService: UserService) {}
+
+    subscribeEvents = (req: Request, res: Response): void => {
+        realtimeService.registerClient(req.user!.id, req, res);
+    };
 
     getMe = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {

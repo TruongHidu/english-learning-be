@@ -1,4 +1,5 @@
 import { UserModel, type UserDocument } from "../../models/user.model.js";
+import type { ClientSession } from "mongoose";
 import type { User } from "../../types/auth.types.js";
 import type {
     CreateUserData,
@@ -148,4 +149,43 @@ export class UserRepository implements IUserRepository {
 
         return document ? toDomainUser(document) : null;
     }
+
+    async purchaseHeart(userId: string, diamondCost: number, session?: ClientSession): Promise<{
+        user: User;
+        diamondBefore: number;
+        diamondAfter: number;
+        heartBefore: number;
+        heartAfter: number;
+    } | null> {
+        const current = await UserModel.findOne({ _id: userId }).select("stats").session(session ?? null).lean().exec();
+        if (!current) return null;
+
+        const diamondBefore = current.stats.diamond;
+        const heartBefore = current.stats.currentHeart;
+        const document = await UserModel.findOneAndUpdate(
+            {
+                _id: userId,
+                status: "ACTIVE",
+                "stats.diamond": { $gte: diamondCost },
+                $expr: { $lt: ["$stats.currentHeart", "$stats.maxHeart"] },
+            },
+            {
+                $inc: {
+                    "stats.diamond": -diamondCost,
+                    "stats.currentHeart": 1,
+                },
+            },
+            { returnDocument: "after", runValidators: true },
+        ).session(session ?? null).exec();
+
+        if (!document) return null;
+        return {
+            user: toDomainUser(document),
+            diamondBefore,
+            diamondAfter: document.stats.diamond,
+            heartBefore,
+            heartAfter: document.stats.currentHeart,
+        };
+    }
+
 }

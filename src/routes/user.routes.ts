@@ -6,6 +6,7 @@ import { changePasswordSchema, updateDisplayNameSchema } from "../validators/use
 
 const userRouter = Router();
 
+userRouter.get("/events", authenticate, userController.subscribeEvents);
 userRouter.get("/me", authenticate, userController.getMe);
 userRouter.patch(
     "/me/name",

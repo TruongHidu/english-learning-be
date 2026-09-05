@@ -1,3 +1,5 @@
+import { AdminDiamondService } from '../services/admin-diamond.service.js';
+import { AdminDiamondController } from '../controllers/admin-diamond.controller.js';
 import { AuthController } from "../controllers/auth.controller.js";
 import { CourseController } from "../controllers/course.controller.js";
 import { SectionController } from "../controllers/section.controller.js";
@@ -45,6 +47,9 @@ import { AiVocabularyCommitRepository } from "../repositories/implementations/ai
 import { AiQuestionCommitRepository } from "../repositories/implementations/ai-question-commit.repository.js";
 import { GeminiContentGenerator } from "../ai/providers/gemini-content-generator.js";
 import { CloudinaryMediaStorage } from "../storage/cloudinary-media-storage.js";
+import { DiamondTransactionRepository } from "../repositories/implementations/diamond-transaction.repository.js";
+import { ShopService } from "../services/shop.service.js";
+import { ShopController } from "../controllers/shop.controller.js";
 
 const userRepository = new UserRepository();
 const courseRepository = new CourseRepository();
@@ -57,6 +62,7 @@ const lessonQuestionRepository = new LessonQuestionRepository();
 const userLessonProgressRepository = new UserLessonProgressRepository();
 const learningSessionRepository = new LearningSessionRepository();
 const userVocabularyRepository = new UserVocabularyRepository();
+const diamondTransactionRepository = new DiamondTransactionRepository();
 const aiGenerationRepository = new AIGenerationRepository();
 const aiVocabularyCommitRepository = new AiVocabularyCommitRepository();
 const aiQuestionCommitRepository = new AiQuestionCommitRepository();
@@ -110,6 +116,7 @@ export const learningService = new LearningService(
     userVocabularyRepository,
 );
 const learningPathService = new LearningPathService(learningProgressionService);
+const shopService = new ShopService(userRepository, heartService, diamondTransactionRepository);
 
 export const adminBootstrapService = new AdminBootstrapService(userRepository, passwordHasher);
 
@@ -143,6 +150,7 @@ export const adminVocabularyController = new AdminVocabularyController(adminVoca
 export const adminQuestionController = new AdminQuestionController(adminQuestionService);
 export const learningController = new LearningController(learningService);
 export const learningPathController = new LearningPathController(learningPathService);
+export const shopController = new ShopController(shopService);
 
 import { AdminAiController } from "../controllers/admin-ai.controller.js";
 
@@ -192,3 +200,6 @@ export const adminAiController = new AdminAiController(
 export const authenticate = createAuthenticate(tokenService);
 export const authorizeAdmin = authorize("ADMIN");
 export const authorizeUser = authorize("USER");
+
+const adminDiamondService = new AdminDiamondService();
+export const adminDiamondController = new AdminDiamondController(adminDiamondService);
