@@ -22,6 +22,9 @@ const adminTopicRouter = Router();
 
 adminTopicRouter.use(authenticate, authorizeAdmin);
 
+adminTopicRouter.get("/topics", adminTopicController.getAll);
+adminTopicRouter.get("/courses/:courseId/topics", adminTopicController.getByCourse);
+
 // Routes with /sections/:sectionId/topics
 adminTopicRouter.get(
     "/sections/:sectionId/topics",

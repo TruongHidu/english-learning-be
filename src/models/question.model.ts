@@ -7,6 +7,10 @@ import {
     type QuestionType,
 } from "../types/question.types.js";
 import { VOCABULARY_DIFFICULTIES, type VocabularyDifficulty } from "../types/vocabulary.types.js";
+import {
+    buildQuestionDedupeKey,
+    normalizeQuestionContent,
+} from "../utils/question-normalization.utils.js";
 
 export interface QuestionOptionPersistence {
     content: string;
@@ -23,6 +27,7 @@ export interface MatchingPairPersistence {
 }
 
 export interface QuestionPersistence {
+    topicId?: Types.ObjectId;
     vocabularyId?: Types.ObjectId;
     vocabularyIds?: Types.ObjectId[];
     type: QuestionType;
@@ -41,6 +46,8 @@ export interface QuestionPersistence {
     status: QuestionStatus;
     createdByAi: boolean;
     aiGenerationId?: Types.ObjectId;
+    normalizedContent?: string;
+    dedupeKey?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -69,6 +76,12 @@ const matchingPairSchema = new Schema<MatchingPairPersistence>(
 
 const questionSchema = new Schema<QuestionPersistence>(
     {
+        topicId: {
+            type: Schema.Types.ObjectId,
+            ref: "Topic",
+            required: false,
+            index: true,
+        },
         vocabularyId: {
             type: Schema.Types.ObjectId,
             ref: "Vocabulary",
@@ -156,12 +169,44 @@ const questionSchema = new Schema<QuestionPersistence>(
         },
         aiGenerationId: {
             type: Schema.Types.ObjectId,
+            ref: "AIGeneration",
             required: false,
+        },
+        normalizedContent: {
+            type: String,
+            required: false,
+            trim: true,
+            select: false,
+        },
+        dedupeKey: {
+            type: String,
+            required: false,
+            trim: true,
+            select: false,
         },
     },
     {
         timestamps: true,
         versionKey: false,
+    },
+);
+
+questionSchema.pre("validate", function normalizeContentBeforeValidation() {
+    if (!this.topicId || !this.type || !this.content) return;
+    this.normalizedContent = normalizeQuestionContent(this.content);
+    this.dedupeKey = buildQuestionDedupeKey(
+        this.topicId.toString(),
+        this.type,
+        this.content,
+    );
+});
+
+questionSchema.index(
+    { dedupeKey: 1 },
+    {
+        unique: true,
+        name: "uniq_question_topic_type_normalized_content",
+        partialFilterExpression: { dedupeKey: { $type: "string" } },
     },
 );
 

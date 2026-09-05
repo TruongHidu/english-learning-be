@@ -11,8 +11,31 @@ export class TopicRepository implements ITopicRepository {
         return TopicModel.findById(id).exec();
     }
 
+    public async findAll(): Promise<TopicDocument[]> {
+        return TopicModel.find().sort({ orderIndex: 1, createdAt: -1 }).exec();
+    }
+
     public async findBySectionId(sectionId: string): Promise<TopicDocument[]> {
-        return TopicModel.find({ sectionId }).sort({ orderIndex: 1 }).exec();
+        return TopicModel.find({ sectionId })
+            .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
+            .exec();
+    }
+
+    public async findPublishedBySectionId(sectionId: string): Promise<TopicDocument[]> {
+        return TopicModel.find({ sectionId, status: "PUBLISHED" })
+            .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
+            .exec();
+    }
+
+    public async findPublishedBySectionIds(sectionIds: string[]): Promise<TopicDocument[]> {
+        if (sectionIds.length === 0) return [];
+
+        return TopicModel.find({
+            sectionId: { $in: sectionIds },
+            status: "PUBLISHED",
+        })
+            .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
+            .exec();
     }
 
     public async findByNameAndSectionId(
@@ -46,7 +69,7 @@ export class TopicRepository implements ITopicRepository {
         return TopicModel.findByIdAndUpdate(
             id,
             { $set: data },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
     }
 
@@ -57,7 +80,7 @@ export class TopicRepository implements ITopicRepository {
         return TopicModel.findByIdAndUpdate(
             id,
             { $set: { status } },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
     }
 

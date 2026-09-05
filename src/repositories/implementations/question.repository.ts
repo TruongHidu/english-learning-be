@@ -17,12 +17,16 @@ import type {
     UpdateQuestionData,
 } from "../interfaces/question.repository.interface.js";
 import { buildVietnameseRegex } from "../../utils/vietnamese.utils.js";
+import {
+    buildQuestionDedupeKey,
+    normalizeQuestionContent,
+} from "../../utils/question-normalization.utils.js";
 
 
 export class QuestionRepository implements IQuestionRepository {
     public async findById(id: string): Promise<QuestionDocument | null> {
         return QuestionModel.findById(id)
-            .select("+audioPublicId +imagePublicId")
+            .select("+audioPublicId +imagePublicId +normalizedContent +dedupeKey")
             .populate("vocabularyIds vocabularyId", "word meaning")
             .exec();
     }
@@ -32,10 +36,21 @@ export class QuestionRepository implements IQuestionRepository {
     ): Promise<{ questions: QuestionDocument[]; total: number }> {
         const filter: Record<string, unknown> = {};
 
-        if (query.vocabularyId) {
+        if (query.topicId) {
+            filter.topicId = query.topicId;
+        }
+
+        if (query.vocabularyIds && query.vocabularyIds.length > 0) {
+            filter.$or = [
+                { vocabularyId: { $in: query.vocabularyIds } },
+                { vocabularyIds: { $in: query.vocabularyIds } },
+                { "matchingPairs.vocabularyId": { $in: query.vocabularyIds } },
+            ];
+        } else if (query.vocabularyId) {
             filter.$or = [
                 { vocabularyId: query.vocabularyId },
                 { vocabularyIds: query.vocabularyId },
+                { "matchingPairs.vocabularyId": query.vocabularyId },
             ];
         }
 
@@ -63,7 +78,7 @@ export class QuestionRepository implements IQuestionRepository {
         }
 
         const page = Math.max(1, query.page ?? 1);
-        const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+        const limit = Math.min(500, Math.max(1, query.limit ?? 500));
         const skip = (page - 1) * limit;
 
         const sortBy = query.sortBy ?? "createdAt";
@@ -110,6 +125,7 @@ export class QuestionRepository implements IQuestionRepository {
             : (vIds && vIds.length > 0 ? vIds[0] : undefined);
 
         const created = await QuestionModel.create({
+            topicId: data.topicId ? new Types.ObjectId(data.topicId) : undefined,
             vocabularyId: primaryVId,
             vocabularyIds: vIds,
             type: data.type,
@@ -124,8 +140,10 @@ export class QuestionRepository implements IQuestionRepository {
             audioPublicId: data.audioPublicId?.trim() || undefined,
             imageUrl: data.imageUrl?.trim() || undefined,
             imagePublicId: data.imagePublicId?.trim() || undefined,
+            aiGenerationId: data.aiGenerationId ? new Types.ObjectId(data.aiGenerationId) : undefined,
+            dedupeKey: data.dedupeKey?.trim() || undefined,
             status: "DRAFT",
-            createdByAi: false,
+            createdByAi: Boolean(data.aiGenerationId),
         });
 
         return (await QuestionModel.findById(created._id).populate("vocabularyIds vocabularyId", "word meaning").exec())!;
@@ -135,6 +153,11 @@ export class QuestionRepository implements IQuestionRepository {
         id: string,
         data: UpdateQuestionData,
     ): Promise<QuestionDocument | null> {
+        const existing = await QuestionModel.findById(id)
+            .select("+normalizedContent +dedupeKey")
+            .exec();
+        if (!existing) return null;
+
         const updatePayload: Partial<QuestionPersistence> = {};
         const unsetPayload: Record<string, 1> = {};
 
@@ -199,6 +222,22 @@ export class QuestionRepository implements IQuestionRepository {
                 : undefined;
         }
 
+        const resultingTopicId = data.topicId
+            ? new Types.ObjectId(data.topicId)
+            : existing.topicId;
+        const resultingType = data.type ?? existing.type;
+        const resultingContent = data.content ?? existing.content;
+        if (resultingTopicId) {
+            updatePayload.topicId = resultingTopicId;
+            updatePayload.normalizedContent = normalizeQuestionContent(resultingContent);
+            updatePayload.dedupeKey = data.dedupeKey?.trim()
+                || buildQuestionDedupeKey(
+                    resultingTopicId.toString(),
+                    resultingType,
+                    resultingContent,
+                );
+        }
+
         const updateOperation: {
             $set: Partial<QuestionPersistence>;
             $unset?: Record<string, 1>;
@@ -211,7 +250,7 @@ export class QuestionRepository implements IQuestionRepository {
         return QuestionModel.findByIdAndUpdate(
             id,
             updateOperation,
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         )
             .select("+audioPublicId +imagePublicId")
             .populate("vocabularyIds vocabularyId", "word meaning")
@@ -225,12 +264,13 @@ export class QuestionRepository implements IQuestionRepository {
         return QuestionModel.findByIdAndUpdate(
             id,
             { $set: { status } },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).populate("vocabularyIds vocabularyId", "word meaning").exec();
     }
 
-    public async deleteById(id: string): Promise<void> {
-        await QuestionModel.findByIdAndDelete(id).exec();
+    public async deleteById(id: string): Promise<boolean> {
+        const deleted = await QuestionModel.findByIdAndDelete(id).exec();
+        return deleted !== null;
     }
 
     public async countByVocabularyId(vocabularyId: string): Promise<number> {
@@ -250,6 +290,48 @@ export class QuestionRepository implements IQuestionRepository {
 
     public async findByIds(ids: string[]): Promise<QuestionDocument[]> {
         return QuestionModel.find({ _id: { $in: ids } }).populate("vocabularyIds vocabularyId", "word meaning").exec();
+    }
+
+    public async findByIdsForAssignment(ids: string[]): Promise<QuestionDocument[]> {
+        if (ids.length === 0) return [];
+        return QuestionModel.find({ _id: { $in: ids } })
+            .select("vocabularyId vocabularyIds matchingPairs")
+            .exec();
+    }
+
+    public async findDedupeRecordsByTopic(
+        topicId: string,
+        vocabularyIds: string[],
+    ): Promise<Array<{ id: string; type: string; content: string; dedupeKey?: string }>> {
+        const objectIds = vocabularyIds.map((id) => new Types.ObjectId(id));
+        const documents = await QuestionModel.find({
+            $or: [
+                { topicId: new Types.ObjectId(topicId) },
+                { vocabularyId: { $in: objectIds } },
+                { vocabularyIds: { $in: objectIds } },
+                { "matchingPairs.vocabularyId": { $in: objectIds } },
+            ],
+        })
+            .select("type content +dedupeKey")
+            .lean()
+            .exec();
+
+        return documents.map((document) => ({
+            id: document._id.toString(),
+            type: document.type,
+            content: document.content,
+            ...(document.dedupeKey && { dedupeKey: document.dedupeKey }),
+        }));
+    }
+
+    public async bulkUpdateStatus(ids: string[], status: QuestionStatus): Promise<number> {
+        if (ids.length === 0) return 0;
+        const result = await QuestionModel.updateMany(
+            { _id: { $in: ids } },
+            { $set: { status } },
+            { runValidators: true },
+        ).exec();
+        return result.modifiedCount;
     }
 }
 

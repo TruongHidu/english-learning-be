@@ -1,6 +1,10 @@
 import { Router } from "express";
 
-import { authenticate, courseController, sectionController } from "../config/container.js";
+import {
+    authenticate,
+    courseController,
+    learningPathController,
+} from "../config/container.js";
 import { validateParams } from "../middlewares/validate.middleware.js";
 import { courseIdParamSchema } from "../validators/course.validator.js";
 
@@ -17,7 +21,7 @@ courseRouter.get(
     "/:courseId/sections",
     authenticate,
     validateParams(courseIdParamSchema),
-    sectionController.getPublishedSections,
+    learningPathController.getSectionsByCourse,
 );
 
 export default courseRouter;

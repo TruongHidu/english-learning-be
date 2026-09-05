@@ -1,3 +1,4 @@
+import type { ClientSession } from "mongoose";
 import type { AuthProvider, User, UserRole, UserStats, UserStatus } from "../../types/auth.types.js";
 
 export interface CreateUserData {
@@ -19,4 +20,34 @@ export interface IUserRepository {
     updateLastLogin(userId: string, date: Date): Promise<void>;
     updateDisplayName(userId: string, displayName: string): Promise<User | null>;
     updatePassword(userId: string, passwordHash: string): Promise<void>;
+    updateHeart(userId: string, delta: number): Promise<void>;
+    updateHeartState(
+        userId: string,
+        currentHeart: number,
+        heartUpdatedAt: Date,
+        expectedCurrentHeart?: number,
+        expectedHeartUpdatedAt?: Date,
+    ): Promise<User | null>;
+    updateStats(
+        userId: string,
+        statsUpdate: {
+            totalXp: number;
+            level: number;
+            diamond: number;
+            currentStreak: number;
+            longestStreak: number;
+            lastStudyDate: Date;
+        },
+    ): Promise<User | null>;
+    purchaseHeart(
+        userId: string,
+        diamondCost: number,
+        session?: ClientSession,
+    ): Promise<{
+        user: User;
+        diamondBefore: number;
+        diamondAfter: number;
+        heartBefore: number;
+        heartAfter: number;
+    } | null>;
 }

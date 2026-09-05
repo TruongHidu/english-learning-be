@@ -7,7 +7,10 @@ import {
 
 export interface ITopicRepository {
     findById(id: string): Promise<TopicDocument | null>;
+    findAll(): Promise<TopicDocument[]>;
     findBySectionId(sectionId: string): Promise<TopicDocument[]>;
+    findPublishedBySectionId(sectionId: string): Promise<TopicDocument[]>;
+    findPublishedBySectionIds(sectionIds: string[]): Promise<TopicDocument[]>;
     findByNameAndSectionId(name: string, sectionId: string): Promise<TopicDocument | null>;
     create(sectionId: string, data: CreateTopicInput): Promise<TopicDocument>;
     update(id: string, data: UpdateTopicInput): Promise<TopicDocument | null>;

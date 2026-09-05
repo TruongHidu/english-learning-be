@@ -4,6 +4,8 @@ import type { IPasswordHasher } from "../security/password-hasher.interface.js";
 import type { ITokenService } from "../security/token-service.interface.js";
 import type { LoginInput, RegisterInput, UserRole, UserStatus } from "../types/auth.types.js";
 
+import type { HeartService } from "./heart.service.js";
+
 interface RegisterResult {
     user: {
         id: string;
@@ -25,6 +27,7 @@ interface LoginResult {
         stats: {
             currentHeart: number;
             maxHeart: number;
+            nextHeartAt?: string | null;
             diamond: number;
             totalXp: number;
             level: number;
@@ -40,6 +43,7 @@ export class AuthService {
         private readonly userRepository: IUserRepository,
         private readonly passwordHasher: IPasswordHasher,
         private readonly tokenService: ITokenService,
+        private readonly heartService: HeartService,
     ) {}
 
     async register(input: RegisterInput): Promise<RegisterResult> {
@@ -125,24 +129,26 @@ export class AuthService {
             );
         }
 
-        const accessToken = this.tokenService.generateAccessToken(user.id, user.role);
-        await this.userRepository.updateLastLogin(user.id, new Date());
+        const syncedUser = await this.heartService.syncUserHearts(user.id);
+        const accessToken = this.tokenService.generateAccessToken(syncedUser.id, syncedUser.role);
+        await this.userRepository.updateLastLogin(syncedUser.id, new Date());
 
         return {
             accessToken,
             user: {
-                id: user.id,
-                email: user.email,
-                displayName: user.displayName,
-                avatarUrl: user.avatarUrl ?? null,
-                role: user.role,
+                id: syncedUser.id,
+                email: syncedUser.email,
+                displayName: syncedUser.displayName,
+                avatarUrl: syncedUser.avatarUrl ?? null,
+                role: syncedUser.role,
                 stats: {
-                    currentHeart: user.stats.currentHeart,
-                    maxHeart: user.stats.maxHeart,
-                    diamond: user.stats.diamond,
-                    totalXp: user.stats.totalXp,
-                    level: user.stats.level,
-                    currentStreak: user.stats.currentStreak,
+                    currentHeart: syncedUser.stats.currentHeart,
+                    maxHeart: syncedUser.stats.maxHeart,
+                    nextHeartAt: syncedUser.stats.nextHeartAt ? syncedUser.stats.nextHeartAt.toISOString() : null,
+                    diamond: syncedUser.stats.diamond,
+                    totalXp: syncedUser.stats.totalXp,
+                    level: syncedUser.stats.level,
+                    currentStreak: syncedUser.stats.currentStreak,
                 },
             },
         };

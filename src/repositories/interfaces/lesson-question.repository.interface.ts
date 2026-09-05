@@ -8,6 +8,7 @@ export interface ILessonQuestionRepository {
     ): Promise<LessonQuestionDocument | null>;
     createMany(lessonId: string, questionIds: string[]): Promise<LessonQuestionDocument[]>;
     deleteByLessonIdAndQuestionId(lessonId: string, questionId: string): Promise<void>;
+    deleteByQuestionId(questionId: string): Promise<void>;
     reorder(lessonId: string, questionIds: string[]): Promise<void>;
     countByLessonId(lessonId: string): Promise<number>;
     countByQuestionId(questionId: string): Promise<number>;

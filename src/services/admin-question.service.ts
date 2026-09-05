@@ -3,6 +3,7 @@ import {
     mapQuestionToListItemResponse,
     mapQuestionToResponse,
 } from "../mappers/question.mapper.js";
+import { mapLessonToResponse } from "../mappers/lesson.mapper.js";
 import type { ILessonQuestionRepository } from "../repositories/interfaces/lesson-question.repository.interface.js";
 import type { ILessonRepository } from "../repositories/interfaces/lesson.repository.interface.js";
 import type {
@@ -20,12 +21,24 @@ import type {
 import type {
     CreateQuestionInput,
     LessonQuestionResponse,
+    AssignQuestionsResult,
     PaginatedQuestionResult,
     QuestionResponse,
     QuestionStatus,
     QuestionListQuery,
     UpdateQuestionInput,
 } from "../types/question.types.js";
+import {
+    haveSameTokenMultiset,
+    normalizeQuestionContent,
+} from "../utils/question-normalization.utils.js";
+
+interface DuplicateKeyErrorLike {
+    code?: number;
+}
+
+const isDuplicateKeyError = (error: unknown): error is DuplicateKeyErrorLike =>
+    typeof error === "object" && error !== null && "code" in error && error.code === 11000;
 
 export class AdminQuestionService {
     constructor(
@@ -58,25 +71,28 @@ export class AdminQuestionService {
         query: QuestionListQuery,
     ): Promise<PaginatedQuestionResult> {
         const { vocabularies } = await this.vocabularyRepository.findByTopicId(topicId, {
-            limit: 100,
+            limit: 500,
         });
         const vocabularyIds = vocabularies.map((v) => v._id.toString());
 
         if (vocabularyIds.length === 0) {
+            const { questions, total } = await this.questionRepository.findAll({
+                ...query,
+                topicId,
+            });
+            const page = query.page ?? 1;
+            const limit = query.limit ?? 20;
+            const totalPages = Math.ceil(total / limit) || 1;
+
             return {
-                questions: [],
-                pagination: {
-                    page: query.page ?? 1,
-                    limit: query.limit ?? 20,
-                    total: 0,
-                    totalPages: 1,
-                },
+                questions: questions.map(mapQuestionToListItemResponse),
+                pagination: { page, limit, total, totalPages },
             };
         }
 
         const { questions, total } = await this.questionRepository.findAll({
             ...query,
-            vocabularyId: vocabularyIds[0], // primary fallback
+            vocabularyIds,
         });
         const page = query.page ?? 1;
         const limit = query.limit ?? 20;
@@ -105,12 +121,7 @@ export class AdminQuestionService {
         input: CreateQuestionInput,
         mediaFiles: QuestionMediaFiles = {},
     ): Promise<QuestionResponse> {
-        if (input.vocabularyId) {
-            const vocab = await this.vocabularyRepository.findById(input.vocabularyId);
-            if (!vocab) {
-                throw new AppError("VOCABULARY_NOT_FOUND", "Không tìm thấy từ vựng liên quan", 404);
-            }
-        }
+        const topicId = await this.resolveTopicIdForQuestionInput(input);
 
         this.ensureListeningHasAudio(
             input.type,
@@ -120,6 +131,7 @@ export class AdminQuestionService {
         const uploadedMedia = await this.uploadMediaFiles(mediaFiles);
         const createData: CreateQuestionData = {
             ...input,
+            ...(topicId && { topicId }),
             ...(uploadedMedia.image && {
                 imageUrl: uploadedMedia.image.url,
                 imagePublicId: uploadedMedia.image.publicId,
@@ -135,6 +147,13 @@ export class AdminQuestionService {
             question = await this.questionRepository.create(createData);
         } catch (error: unknown) {
             await this.cleanupUploadedMedia(uploadedMedia);
+            if (isDuplicateKeyError(error)) {
+                throw new AppError(
+                    "QUESTION_ALREADY_EXISTS",
+                    "Câu hỏi cùng loại và nội dung đã tồn tại trong chủ đề",
+                    409,
+                );
+            }
             throw error;
         }
         return mapQuestionToResponse(question);
@@ -150,12 +169,12 @@ export class AdminQuestionService {
             throw new AppError("QUESTION_NOT_FOUND", "Không tìm thấy câu hỏi", 404);
         }
 
-        if (input.vocabularyId) {
-            const vocab = await this.vocabularyRepository.findById(input.vocabularyId);
-            if (!vocab) {
-                throw new AppError("VOCABULARY_NOT_FOUND", "Không tìm thấy từ vựng liên quan", 404);
-            }
-        }
+        const hasVocabularyChanges = input.vocabularyId !== undefined
+            || input.vocabularyIds !== undefined
+            || input.matchingPairs !== undefined;
+        const topicId = hasVocabularyChanges
+            ? await this.resolveTopicIdForQuestionInput(input)
+            : existingQuestion.topicId?.toString();
 
         const resultingType = input.type ?? existingQuestion.type;
         const resultingAudioUrl = mediaFiles.audio
@@ -166,7 +185,10 @@ export class AdminQuestionService {
         this.ensureListeningHasAudio(resultingType, Boolean(resultingAudioUrl));
 
         const uploadedMedia = await this.uploadMediaFiles(mediaFiles);
-        const updateData: UpdateQuestionData = { ...input };
+        const updateData: UpdateQuestionData = {
+            ...input,
+            ...(topicId && { topicId }),
+        };
         const replacedMedia: Array<{ publicId: string; kind: MediaKind }> = [];
 
         if (uploadedMedia.image) {
@@ -206,6 +228,13 @@ export class AdminQuestionService {
             updated = await this.questionRepository.update(questionId, updateData);
         } catch (error: unknown) {
             await this.cleanupUploadedMedia(uploadedMedia);
+            if (isDuplicateKeyError(error)) {
+                throw new AppError(
+                    "QUESTION_ALREADY_EXISTS",
+                    "Câu hỏi cùng loại và nội dung đã tồn tại trong chủ đề",
+                    409,
+                );
+            }
             throw error;
         }
 
@@ -240,20 +269,41 @@ export class AdminQuestionService {
         return mapQuestionToResponse(updated);
     }
 
+    public async bulkPublishQuestions(
+        questionIds: string[],
+    ): Promise<{ modifiedCount: number; publishedIds: string[] }> {
+        const uniqueIds = Array.from(new Set(questionIds));
+        const questions = await this.questionRepository.findByIds(uniqueIds);
+        if (questions.length !== uniqueIds.length) {
+            throw new AppError(
+                "QUESTION_NOT_FOUND",
+                "Một hoặc nhiều câu hỏi không tồn tại",
+                404,
+            );
+        }
+        for (const question of questions) this.validatePublishReadiness(question);
+        const modifiedCount = await this.questionRepository.bulkUpdateStatus(
+            uniqueIds,
+            "PUBLISHED",
+        );
+        if (modifiedCount !== uniqueIds.length) {
+            throw new AppError(
+                "QUESTION_BULK_PUBLISH_FAILED",
+                "Không thể phát hành đầy đủ danh sách câu hỏi",
+                409,
+            );
+        }
+        return { modifiedCount, publishedIds: uniqueIds };
+    }
+
     public async deleteQuestion(questionId: string): Promise<void> {
         const question = await this.questionRepository.findById(questionId);
         if (!question) {
             throw new AppError("QUESTION_NOT_FOUND", "Không tìm thấy câu hỏi", 404);
         }
 
-        const lessonUsageCount = await this.lessonQuestionRepository.countByQuestionId(questionId);
-        if (lessonUsageCount > 0) {
-            throw new AppError(
-                "QUESTION_IS_USED_BY_LESSON",
-                "Không thể xóa câu hỏi vì đang được sử dụng trong bài học",
-                409,
-            );
-        }
+        // Remove any lesson question associations before deleting
+        await this.lessonQuestionRepository.deleteByQuestionId(questionId).catch(() => {});
 
         await this.questionRepository.deleteById(questionId);
         await Promise.all([
@@ -299,14 +349,15 @@ export class AdminQuestionService {
     public async assignQuestionsToLesson(
         lessonId: string,
         questionIds: string[],
-    ): Promise<LessonQuestionResponse[]> {
+    ): Promise<AssignQuestionsResult> {
         const lesson = await this.lessonRepository.findById(lessonId);
         if (!lesson) {
             throw new AppError("LESSON_NOT_FOUND", "Không tìm thấy bài học", 404);
         }
 
-        const allExist = await this.questionRepository.existsByIds(questionIds);
-        if (!allExist) {
+        const uniqueQuestionIds = Array.from(new Set(questionIds));
+        const questions = await this.questionRepository.findByIdsForAssignment(uniqueQuestionIds);
+        if (questions.length !== uniqueQuestionIds.length) {
             throw new AppError(
                 "QUESTION_NOT_FOUND",
                 "Một hoặc nhiều ID câu hỏi không tồn tại",
@@ -314,25 +365,90 @@ export class AdminQuestionService {
             );
         }
 
+        // Question currently derives its Topic from linked Vocabulary. Questions without
+        // linked Vocabulary are intentionally treated as global question-bank records.
+        const vocabularyIds = new Set<string>();
+        for (const question of questions) {
+            if (question.vocabularyId) vocabularyIds.add(question.vocabularyId.toString());
+            for (const vocabularyId of question.vocabularyIds ?? []) {
+                vocabularyIds.add(vocabularyId.toString());
+            }
+            for (const pair of question.matchingPairs ?? []) {
+                if (pair.vocabularyId) vocabularyIds.add(pair.vocabularyId.toString());
+            }
+        }
+
+        if (vocabularyIds.size > 0) {
+            const vocabularies = await this.vocabularyRepository.findByIds(Array.from(vocabularyIds));
+            const vocabularyTopicById = new Map(
+                vocabularies.map((vocabulary) => [
+                    vocabulary._id.toString(),
+                    vocabulary.topicId.toString(),
+                ]),
+            );
+            const lessonTopicId = lesson.topicId.toString();
+            const hasTopicMismatch = Array.from(vocabularyIds).some(
+                (vocabularyId) => vocabularyTopicById.get(vocabularyId) !== lessonTopicId,
+            );
+            if (hasTopicMismatch) {
+                throw new AppError(
+                    "QUESTION_TOPIC_MISMATCH",
+                    "Không thể gán câu hỏi thuộc chủ đề khác vào bài học này",
+                    400,
+                );
+            }
+        }
+
         const existingAssignments = await this.lessonQuestionRepository.findByLessonId(lessonId);
         const existingQIds = new Set(existingAssignments.map((lq) => lq.questionId.toString()));
 
-        const newQuestionIds = questionIds.filter((qId) => !existingQIds.has(qId));
-        if (newQuestionIds.length === 0) {
-            throw new AppError(
-                "QUESTION_ALREADY_ASSIGNED_TO_LESSON",
-                "Tất cả các câu hỏi này đã được gán vào bài học",
-                409,
-            );
-        }
+        const newQuestionIds = uniqueQuestionIds.filter((qId) => !existingQIds.has(qId));
+        if (newQuestionIds.length > 0) {
+            try {
+                await this.lessonQuestionRepository.createMany(lessonId, newQuestionIds);
+            } catch (error: unknown) {
+                if (!isDuplicateKeyError(error)) throw error;
 
-        await this.lessonQuestionRepository.createMany(lessonId, newQuestionIds);
+                // Another request may have inserted one of the same assignments. Re-read
+                // and retry only IDs still missing; the unique index remains the final guard.
+                const afterRace = await this.lessonQuestionRepository.findByLessonId(lessonId);
+                const stillMissing = newQuestionIds.filter(
+                    (questionId) => !afterRace.some((item) => item.questionId.toString() === questionId),
+                );
+                if (stillMissing.length > 0) {
+                    try {
+                        await this.lessonQuestionRepository.createMany(lessonId, stillMissing);
+                    } catch (retryError: unknown) {
+                        if (!isDuplicateKeyError(retryError)) throw retryError;
+                        throw new AppError(
+                            "QUESTION_ALREADY_ASSIGNED_TO_LESSON",
+                            "Một hoặc nhiều câu hỏi đã được gán vào bài học",
+                            409,
+                        );
+                    }
+                }
+            }
+        }
 
         // Update questionCount in Lesson
         const totalCount = await this.lessonQuestionRepository.countByLessonId(lessonId);
-        await this.lessonRepository.update(lessonId, { questionCount: totalCount });
+        const updatedLesson = await this.lessonRepository.update(lessonId, { questionCount: totalCount });
+        if (!updatedLesson) {
+            throw new AppError("LESSON_NOT_FOUND", "Không tìm thấy bài học", 404);
+        }
 
-        return this.getLessonQuestions(lessonId);
+        const currentAssignments = await this.lessonQuestionRepository.findByLessonId(lessonId);
+        const assignedCount = uniqueQuestionIds.filter((questionId) =>
+            !existingQIds.has(questionId) &&
+            currentAssignments.some((item) => item.questionId.toString() === questionId),
+        ).length;
+
+        return {
+            lesson: mapLessonToResponse(updatedLesson),
+            questions: await this.getLessonQuestions(lessonId),
+            assignedCount,
+            skippedCount: Math.max(0, uniqueQuestionIds.length - assignedCount),
+        };
     }
 
     public async removeQuestionFromLesson(
@@ -390,11 +506,18 @@ export class AdminQuestionService {
 
     private validatePublishReadiness(question: {
         type: string;
-        options?: Array<{ isCorrect: boolean }>;
+        options?: Array<{ content: string; isCorrect: boolean }>;
         matchingPairs?: unknown[];
         correctAnswer?: unknown;
-        audioUrl?: string;
+        content: string;
     }): void {
+        if (!["MULTIPLE_CHOICE", "MATCHING", "FILL_BLANK", "ORDER_SENTENCE"].includes(question.type)) {
+            throw new AppError(
+                "QUESTION_TYPE_NOT_LEARNABLE",
+                "Loại câu hỏi này chưa được trang học hỗ trợ",
+                400,
+            );
+        }
         if (question.type === "MULTIPLE_CHOICE") {
             if (!question.options || question.options.length < 2) {
 
@@ -412,6 +535,17 @@ export class AdminQuestionService {
                     400,
                 );
             }
+            const correctOption = question.options.find((option) => option.isCorrect);
+            if (typeof question.correctAnswer !== "string"
+                || !correctOption
+                || normalizeQuestionContent(question.correctAnswer)
+                    !== normalizeQuestionContent((correctOption as { content?: string }).content ?? "")) {
+                throw new AppError(
+                    "QUESTION_NOT_READY_TO_PUBLISH",
+                    "correctAnswer phải trùng với lựa chọn đúng",
+                    400,
+                );
+            }
         } else if (question.type === "MATCHING") {
             if (!question.matchingPairs || question.matchingPairs.length < 2) {
                 throw new AppError(
@@ -420,11 +554,20 @@ export class AdminQuestionService {
                     400,
                 );
             }
-        } else if (
-            question.type === "FILL_BLANK" ||
-            question.type === "TRANSLATION" ||
-            question.type === "ORDER_SENTENCE"
-        ) {
+            const pairs = question.matchingPairs as Array<{ leftValue?: string; rightValue?: string }>;
+            const leftValues = pairs.map((pair) => normalizeQuestionContent(pair.leftValue ?? ""));
+            const rightValues = pairs.map((pair) => normalizeQuestionContent(pair.rightValue ?? ""));
+            if (leftValues.some((value) => !value)
+                || rightValues.some((value) => !value)
+                || new Set(leftValues).size !== leftValues.length
+                || new Set(rightValues).size !== rightValues.length) {
+                throw new AppError(
+                    "QUESTION_NOT_READY_TO_PUBLISH",
+                    "Các cặp ghép phải có nội dung và không được trùng",
+                    400,
+                );
+            }
+        } else if (question.type === "FILL_BLANK" || question.type === "ORDER_SENTENCE") {
             if (question.correctAnswer === undefined || question.correctAnswer === null || question.correctAnswer === "") {
                 throw new AppError(
                     "QUESTION_NOT_READY_TO_PUBLISH",
@@ -432,15 +575,60 @@ export class AdminQuestionService {
                     400,
                 );
             }
-        } else if (question.type === "LISTENING") {
-            if (!question.audioUrl) {
+            if (question.type === "FILL_BLANK" && !/(?:_{3,}|\[\s*blank\s*\]|\.\.\.)/i.test(question.content)) {
                 throw new AppError(
                     "QUESTION_NOT_READY_TO_PUBLISH",
-                    "Câu hỏi nghe chưa có file âm thanh audioUrl để xuất bản",
+                    "Câu hỏi điền từ phải có vị trí trống",
                     400,
                 );
             }
+            if (question.type === "ORDER_SENTENCE") {
+                const answer = typeof question.correctAnswer === "string"
+                    ? question.correctAnswer
+                    : Array.isArray(question.correctAnswer)
+                        ? question.correctAnswer.filter((item): item is string => typeof item === "string")
+                        : [];
+                const optionContents = (question.options ?? [])
+                    .map((option) => (option as { content?: string }).content ?? "");
+                if (optionContents.length < 2 || !haveSameTokenMultiset(answer, optionContents)) {
+                    throw new AppError(
+                        "QUESTION_NOT_READY_TO_PUBLISH",
+                        "Các word chip phải khớp với đáp án của câu sắp xếp",
+                        400,
+                    );
+                }
+            }
         }
+    }
+
+    private async resolveTopicIdForQuestionInput(
+        input: Pick<CreateQuestionInput, "vocabularyId" | "vocabularyIds" | "matchingPairs">,
+    ): Promise<string | undefined> {
+        const vocabularyIds = new Set<string>();
+        if (input.vocabularyId) vocabularyIds.add(input.vocabularyId);
+        for (const id of input.vocabularyIds ?? []) vocabularyIds.add(id);
+        for (const pair of input.matchingPairs ?? []) {
+            if (pair.vocabularyId) vocabularyIds.add(pair.vocabularyId);
+        }
+        if (vocabularyIds.size === 0) return undefined;
+
+        const vocabularies = await this.vocabularyRepository.findByIds(Array.from(vocabularyIds));
+        if (vocabularies.length !== vocabularyIds.size) {
+            throw new AppError(
+                "VOCABULARY_NOT_FOUND",
+                "Một hoặc nhiều từ vựng liên quan không tồn tại",
+                404,
+            );
+        }
+        const topicIds = new Set(vocabularies.map((vocabulary) => vocabulary.topicId.toString()));
+        if (topicIds.size !== 1) {
+            throw new AppError(
+                "QUESTION_TOPIC_MISMATCH",
+                "Các từ vựng của câu hỏi phải thuộc cùng một chủ đề",
+                400,
+            );
+        }
+        return topicIds.values().next().value;
     }
 
     private ensureListeningHasAudio(type: string, hasAudio: boolean): void {

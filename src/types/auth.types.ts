@@ -17,6 +17,7 @@ export interface UserStats {
     currentStreak: number;
     longestStreak: number;
     lastStudyDate?: Date;
+    nextHeartAt?: Date | null;
 }
 
 export interface User {

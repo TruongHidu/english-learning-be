@@ -1,4 +1,5 @@
 import { UserModel, type UserDocument } from "../../models/user.model.js";
+import type { ClientSession } from "mongoose";
 import type { User } from "../../types/auth.types.js";
 import type {
     CreateUserData,
@@ -69,7 +70,7 @@ export class UserRepository implements IUserRepository {
         const document = await UserModel.findByIdAndUpdate(
             userId,
             { $set: { displayName } },
-            { new: true, runValidators: true },
+            { returnDocument: "after", runValidators: true },
         ).exec();
 
         return document ? toDomainUser(document) : null;
@@ -82,4 +83,109 @@ export class UserRepository implements IUserRepository {
             { runValidators: true },
         ).exec();
     }
+
+    async updateHeart(userId: string, delta: number): Promise<void> {
+        await UserModel.updateOne(
+            { _id: userId },
+            { $inc: { "stats.currentHeart": delta } },
+            { runValidators: true },
+        ).exec();
+    }
+
+    async updateHeartState(
+        userId: string,
+        currentHeart: number,
+        heartUpdatedAt: Date,
+        expectedCurrentHeart?: number,
+        expectedHeartUpdatedAt?: Date,
+    ): Promise<User | null> {
+        const filter: Record<string, unknown> = { _id: userId };
+        if (expectedCurrentHeart !== undefined) {
+            filter["stats.currentHeart"] = expectedCurrentHeart;
+        }
+        if (expectedHeartUpdatedAt !== undefined) {
+            filter["stats.heartUpdatedAt"] = expectedHeartUpdatedAt;
+        }
+
+        const document = await UserModel.findOneAndUpdate(
+            filter,
+            {
+                $set: {
+                    "stats.currentHeart": currentHeart,
+                    "stats.heartUpdatedAt": heartUpdatedAt,
+                },
+            },
+            { returnDocument: "after", runValidators: true },
+        ).exec();
+
+        return document ? toDomainUser(document) : null;
+    }
+
+    async updateStats(
+        userId: string,
+        statsUpdate: {
+            totalXp: number;
+            level: number;
+            diamond: number;
+            currentStreak: number;
+            longestStreak: number;
+            lastStudyDate: Date;
+        },
+    ): Promise<User | null> {
+        const document = await UserModel.findByIdAndUpdate(
+            userId,
+            {
+                $set: {
+                    "stats.totalXp": statsUpdate.totalXp,
+                    "stats.level": statsUpdate.level,
+                    "stats.diamond": statsUpdate.diamond,
+                    "stats.currentStreak": statsUpdate.currentStreak,
+                    "stats.longestStreak": statsUpdate.longestStreak,
+                    "stats.lastStudyDate": statsUpdate.lastStudyDate,
+                },
+            },
+            { returnDocument: "after", runValidators: true },
+        ).exec();
+
+        return document ? toDomainUser(document) : null;
+    }
+
+    async purchaseHeart(userId: string, diamondCost: number, session?: ClientSession): Promise<{
+        user: User;
+        diamondBefore: number;
+        diamondAfter: number;
+        heartBefore: number;
+        heartAfter: number;
+    } | null> {
+        const current = await UserModel.findOne({ _id: userId }).select("stats").session(session ?? null).lean().exec();
+        if (!current) return null;
+
+        const diamondBefore = current.stats.diamond;
+        const heartBefore = current.stats.currentHeart;
+        const document = await UserModel.findOneAndUpdate(
+            {
+                _id: userId,
+                status: "ACTIVE",
+                "stats.diamond": { $gte: diamondCost },
+                $expr: { $lt: ["$stats.currentHeart", "$stats.maxHeart"] },
+            },
+            {
+                $inc: {
+                    "stats.diamond": -diamondCost,
+                    "stats.currentHeart": 1,
+                },
+            },
+            { returnDocument: "after", runValidators: true },
+        ).session(session ?? null).exec();
+
+        if (!document) return null;
+        return {
+            user: toDomainUser(document),
+            diamondBefore,
+            diamondAfter: document.stats.diamond,
+            heartBefore,
+            heartAfter: document.stats.currentHeart,
+        };
+    }
+
 }

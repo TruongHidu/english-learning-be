@@ -1,3 +1,4 @@
+import adminDiamondRouter from './routes/admin-diamond.routes.js';
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -12,6 +13,11 @@ import adminQuestionRouter from "./routes/admin-question.routes.js";
 import authRouter from "./routes/auth.routes.js";
 import courseRouter from "./routes/course.routes.js";
 import userRouter from "./routes/user.routes.js";
+import learningRouter from "./routes/learning.routes.js";
+import learningPathRouter from "./routes/learning-path.routes.js";
+import sessionRouter from "./routes/session.routes.js";
+import userVocabularyRouter from "./routes/user-vocabulary.routes.js";
+import shopRouter from "./routes/shop.routes.js";
 
 const app = express();
 
@@ -33,15 +39,25 @@ app.get("/api/v1/health", (_req, res) => {
     });
 });
 
+import adminAiRouter, { adminTopicAiRouter } from "./routes/admin-ai.routes.js";
+
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", userRouter);
+app.use("/api/v1/user", userVocabularyRouter);
+app.use("/api/v1/shop", shopRouter);
 app.use("/api/v1/courses", courseRouter);
+app.use("/api/v1/lessons", learningRouter);
+app.use("/api/v1/sessions", sessionRouter);
+app.use("/api/v1", learningPathRouter);
 app.use("/api/v1/admin/courses", adminCourseRouter);
 app.use("/api/v1/admin/sections", adminSectionRouter);
 app.use("/api/v1/admin", adminTopicRouter);
 app.use("/api/v1/admin", adminLessonRouter);
 app.use("/api/v1/admin", adminVocabularyRouter);
 app.use("/api/v1/admin", adminQuestionRouter);
+app.use("/api/v1/admin", adminTopicAiRouter);
+app.use("/api/v1/admin/ai", adminAiRouter);
+app.use("/api/v1/admin", adminDiamondRouter);
 
 app.use(errorHandler);
 

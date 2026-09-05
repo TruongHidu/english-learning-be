@@ -5,14 +5,14 @@ import type { ITokenService } from "../security/token-service.interface.js";
 
 export const createAuthenticate = (tokenService: ITokenService): RequestHandler =>
     (req, _res, next): void => {
-        const authorization = req.headers.authorization;
+        let token: string | undefined;
 
-        if (!authorization?.startsWith("Bearer ")) {
-            next(new AppError("UNAUTHORIZED", "Vui lòng đăng nhập", 401));
-            return;
+        if (req.headers.authorization?.startsWith("Bearer ")) {
+            token = req.headers.authorization.slice("Bearer ".length).trim();
+        } else if (typeof req.query.token === "string" && req.query.token.trim()) {
+            token = req.query.token.trim();
         }
 
-        const token = authorization.slice("Bearer ".length).trim();
         if (!token) {
             next(new AppError("UNAUTHORIZED", "Vui lòng đăng nhập", 401));
             return;
