@@ -46,6 +46,11 @@ import { AIGenerationRepository } from "../repositories/implementations/ai-gener
 import { AiVocabularyCommitRepository } from "../repositories/implementations/ai-vocabulary-commit.repository.js";
 import { AiQuestionCommitRepository } from "../repositories/implementations/ai-question-commit.repository.js";
 import { GeminiContentGenerator } from "../ai/providers/gemini-content-generator.js";
+import { GeminiTranslationEvaluator } from "../ai/providers/gemini-translation-evaluator.js";
+import {
+    TRANSLATION_GRADING_ENABLED,
+    TRANSLATION_TIMEOUT_MS,
+} from "./translation-grading.config.js";
 import { CloudinaryMediaStorage } from "../storage/cloudinary-media-storage.js";
 import { DiamondTransactionRepository } from "../repositories/implementations/diamond-transaction.repository.js";
 import { DiamondPackageRepository } from "../repositories/implementations/diamond-package.repository.js";
@@ -77,6 +82,13 @@ const tokenService = new JwtTokenService();
 const mediaStorage = new CloudinaryMediaStorage();
 const heartService = new HeartService(userRepository);
 const userStatsService = new UserStatsService(userRepository);
+const translationEvaluator = TRANSLATION_GRADING_ENABLED
+    ? new GeminiTranslationEvaluator({
+          apiKey: process.env.GEMINI_API_KEY,
+          modelName: process.env.AI_MODEL || "gemini-2.0-flash",
+          timeoutMs: TRANSLATION_TIMEOUT_MS,
+      })
+    : undefined;
 
 const authService = new AuthService(userRepository, passwordHasher, tokenService, heartService);
 const userService = new UserService(userRepository, passwordHasher, heartService, userVocabularyRepository);
@@ -119,6 +131,7 @@ export const learningService = new LearningService(
     heartService,
     userStatsService,
     userVocabularyRepository,
+    translationEvaluator,
 );
 const learningPathService = new LearningPathService(learningProgressionService);
 const shopService = new ShopService(userRepository, heartService, diamondTransactionRepository, diamondPackageRepository);

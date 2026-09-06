@@ -10,6 +10,7 @@ import {
     generatedMultipleChoiceSchema,
     generatedOrderSentenceSchema,
     generatedQuestionCandidatesSchema,
+    generatedTranslationSchema,
     generatedVocabularyCandidatesSchema,
 } from "../src/ai/schemas/generated-content.schema.js";
 import { AppError } from "../src/errors/app-error.js";
@@ -79,6 +80,17 @@ const validMultipleChoice = {
         { content: "sân bay", isCorrect: false, orderIndex: 1 },
     ],
     explanation: "Harbor means bến cảng.",
+    difficulty: "EASY",
+};
+
+const validTranslation = {
+    type: "TRANSLATION",
+    vocabularyId: VOCAB_ID.toString(),
+    vocabularyIds: [VOCAB_ID.toString()],
+    content: "The ship entered the harbor.",
+    instruction: "Dịch câu sau sang tiếng Việt.",
+    correctAnswer: "Con tàu đã đi vào bến cảng.",
+    explanation: "Harbor có nghĩa là bến cảng.",
     difficulty: "EASY",
 };
 
@@ -959,7 +971,7 @@ test("question generation rejects a non-array provider response and marks FAILED
     assert.equal(harness.generationRepository.generation?.status, "FAILED");
 });
 
-test("question preview schema accepts only canonical learnable AI types", () => {
+test("question preview schema accepts canonical AI types including TRANSLATION", () => {
     const base = {
         questionTypes: ["FILL_BLANK"],
         count: 1,
@@ -973,7 +985,68 @@ test("question preview schema accepts only canonical learnable AI types", () => 
     assert.equal(generateQuestionPreviewSchema.safeParse({
         ...base,
         questionTypes: ["TRANSLATION"],
-    }).success, false);
+    }).success, true);
+});
+
+test("question generation accepts a scoped TRANSLATION candidate", async () => {
+    const generator = new FakeAiContentGenerator({ questions: [validTranslation] });
+    const harness = makeHarness(
+        generator,
+        { seedVocabularies: [makeVocabularyDocument("harbor", { id: VOCAB_ID })] },
+    );
+
+    const result = await harness.service.generateQuestionPreview(
+        ADMIN_ID,
+        TOPIC_ID.toString(),
+        {
+            vocabularyIds: [VOCAB_ID.toString()],
+            questionTypes: ["TRANSLATION"],
+            count: 1,
+            difficulty: "EASY",
+        },
+    );
+
+    assert.equal(result.status, "COMPLETED");
+    assert.equal(result.acceptedCount, 1);
+    assert.equal(result.candidates[0]?.type, "TRANSLATION");
+    assert.equal(generator.lastQuestionInput?.questionTypes[0], "TRANSLATION");
+});
+
+test("deprecated question generation service accepts TRANSLATION", async () => {
+    const harness = makeHarness(
+        new FakeAiContentGenerator({ questions: [validTranslation] }),
+        { seedVocabularies: [makeVocabularyDocument("harbor", { id: VOCAB_ID })] },
+    );
+
+    const result = await harness.service.generateQuestions(ADMIN_ID, {
+        topicId: TOPIC_ID.toString(),
+        vocabularyIds: [VOCAB_ID.toString()],
+        questionTypes: ["TRANSLATION"],
+        quantity: 1,
+        difficulty: "EASY",
+    });
+
+    assert.equal(result.acceptedCount, 1);
+    assert.equal(result.candidates[0]?.type, "TRANSLATION");
+});
+
+test("question generation rejects a TRANSLATION vocabulary outside the request scope", async () => {
+    const harness = makeHarness(
+        new FakeAiContentGenerator({
+            questions: [{ ...validTranslation, vocabularyId: new Types.ObjectId().toString() }],
+        }),
+        { seedVocabularies: [makeVocabularyDocument("harbor", { id: VOCAB_ID })] },
+    );
+
+    await assert.rejects(
+        harness.service.generateQuestionPreview(ADMIN_ID, TOPIC_ID.toString(), {
+            vocabularyIds: [VOCAB_ID.toString()],
+            questionTypes: ["TRANSLATION"],
+            count: 1,
+            difficulty: "EASY",
+        }),
+        (error: unknown) => error instanceof AppError && error.code === "AI_OUTPUT_INVALID",
+    );
 });
 
 test("question generation keeps valid candidates and marks PARTIAL when another candidate is invalid", async () => {
@@ -1091,6 +1164,36 @@ test("question commit creates selected AI Question as DRAFT without Lesson assig
     assert.equal(result.questions[0]?.createdByAi, true);
     assert.equal(result.questions[0]?.aiGenerationId, preview.generationId);
     assert.equal(harness.generationRepository.generation?.status, "COMMITTED");
+});
+
+test("question commit persists a TRANSLATION candidate as DRAFT", async () => {
+    const harness = makeHarness(
+        new FakeAiContentGenerator({ questions: [validTranslation] }),
+        { seedVocabularies: [makeVocabularyDocument("harbor", { id: VOCAB_ID })] },
+    );
+    const preview = await harness.service.generateQuestionPreview(
+        ADMIN_ID,
+        TOPIC_ID.toString(),
+        {
+            vocabularyIds: [VOCAB_ID.toString()],
+            questionTypes: ["TRANSLATION"],
+            count: 1,
+            difficulty: "EASY",
+        },
+    );
+
+    const result = await harness.service.commitQuestionGeneration(
+        ADMIN_ID,
+        preview.generationId,
+        { items: [preview.candidates[0]!] },
+    );
+
+    assert.equal(result.committedCount, 1);
+    assert.equal(result.questions[0]?.type, "TRANSLATION");
+    assert.equal(result.questions[0]?.correctAnswer, validTranslation.correctAnswer);
+    assert.equal(result.questions[0]?.status, "DRAFT");
+    assert.equal(result.questions[0]?.options, null);
+    assert.equal(result.questions[0]?.matchingPairs, null);
 });
 
 test("question commit is idempotent and concurrent calls create one Question", async () => {
@@ -1301,6 +1404,19 @@ test("question semantic schemas still enforce correct options, pairs and blanks"
         ],
         difficulty: "EASY",
     }).success, false);
+    assert.equal(generatedTranslationSchema.safeParse(validTranslation).success, true);
+    assert.equal(generatedTranslationSchema.safeParse({
+        ...validTranslation,
+        correctAnswer: "   ",
+    }).success, false);
+    assert.equal(generatedTranslationSchema.safeParse({
+        ...validTranslation,
+        options: [],
+    }).success, false);
+    assert.equal(generatedTranslationSchema.safeParse({
+        ...validTranslation,
+        matchingPairs: [],
+    }).success, false);
 });
 
 test("provider timeout transitions an AIGeneration to FAILED", async () => {
@@ -1326,6 +1442,39 @@ test("question provider timeout marks Question AIGeneration FAILED", async () =>
         (error: unknown) => error instanceof AppError && error.code === "AI_PROVIDER_TIMEOUT",
     );
     assert.equal(harness.generationRepository.generation?.status, "FAILED");
+});
+
+test("Gemini question prompt allows requested TRANSLATION output", async () => {
+    let capturedPrompt = "";
+    const provider = new GeminiContentGenerator({
+        apiKey: "test-key",
+        fetchImpl: async (_input, init) => {
+            const request = JSON.parse(String(init?.body)) as {
+                contents: Array<{ parts: Array<{ text: string }> }>;
+            };
+            capturedPrompt = request.contents[0]?.parts[0]?.text ?? "";
+            return new Response(JSON.stringify({
+                candidates: [{ content: { parts: [{ text: "[]" }] } }],
+            }), { status: 200 });
+        },
+    });
+
+    await provider.generateQuestions({
+        topicName: "Travel",
+        vocabularies: [{
+            id: VOCAB_ID.toString(),
+            word: "harbor",
+            meaning: "bến cảng",
+        }],
+        questionTypes: ["TRANSLATION"],
+        quantity: 1,
+        difficulty: "EASY",
+    });
+
+    assert.match(capturedPrompt, /TRANSLATION:/u);
+    assert.match(capturedPrompt, /Dịch câu sau sang tiếng Việt/u);
+    assert.match(capturedPrompt, /không thêm options hoặc matchingPairs/u);
+    assert.doesNotMatch(capturedPrompt, /Không trả TRANSLATION/u);
 });
 
 test("Gemini timeout is controlled and missing key does not call the provider", async () => {

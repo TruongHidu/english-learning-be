@@ -47,6 +47,7 @@ export const AI_SUPPORTED_QUESTION_TYPES = [
     "MATCHING",
     "FILL_BLANK",
     "ORDER_SENTENCE",
+    "TRANSLATION",
 ] as const satisfies readonly QuestionType[];
 
 export type AiSupportedQuestionType = (typeof AI_SUPPORTED_QUESTION_TYPES)[number];

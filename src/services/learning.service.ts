@@ -2,6 +2,8 @@ import { Types } from "mongoose";
 
 import { AppError } from "../errors/app-error.js";
 import { effectiveCurrentStreak } from "../utils/streak.js";
+import type { ITranslationEvaluator } from "../ai/interfaces/translation-evaluator.interface.js";
+import { TRANSLATION_MIN_SCORE } from "../config/translation-grading.config.js";
 import {
     mapLearningQuestionToResponse,
     mapLearningSessionToResponse,
@@ -42,6 +44,7 @@ export class LearningService {
         private readonly heartService: HeartService,
         private readonly userStatsService: UserStatsService,
         private readonly userVocabularyRepository: IUserVocabularyRepository,
+        private readonly translationEvaluator?: ITranslationEvaluator,
     ) {}
 
     async startLesson(userId: string, lessonId: string): Promise<StartLessonResponse> {
@@ -151,13 +154,29 @@ export class LearningService {
             );
         }
 
-        const isCorrect = this.checkAnswer(
+        let isCorrect = this.checkAnswer(
             snapshot.type,
             snapshot.correctAnswer,
             body.answer,
             snapshot.options,
             snapshot.matchingPairs,
         );
+
+        if (
+            !isCorrect
+            && snapshot.type === "TRANSLATION"
+            && typeof snapshot.correctAnswer === "string"
+            && typeof body.answer === "string"
+            && body.answer.trim().length > 0
+            && this.translationEvaluator
+        ) {
+            const evaluation = await this.translationEvaluator.evaluate({
+                referenceAnswer: snapshot.correctAnswer,
+                userAnswer: body.answer,
+            });
+            isCorrect = evaluation.semanticScore >= TRANSLATION_MIN_SCORE
+                && !evaluation.hasCriticalError;
+        }
 
         const updatedSession = await this.learningSessionRepository.recordAnswer({
             sessionId,

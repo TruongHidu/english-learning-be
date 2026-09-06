@@ -225,6 +225,7 @@ MULTIPLE_CHOICE: {type, vocabularyId, content, instruction, correctAnswer, optio
 MATCHING: {type, vocabularyId, content, instruction, matchingPairs:[{vocabularyId,leftValue,rightValue,orderIndex}], explanation, difficulty}; các cặp không trùng.
 FILL_BLANK: {type, vocabularyId, content có _____, instruction, correctAnswer, explanation, difficulty}.
 ORDER_SENTENCE: {type, vocabularyId, content, instruction, correctAnswer là chuỗi câu hoàn chỉnh, options:[{content là từng token,isCorrect:true,orderIndex}], explanation, difficulty}; multiset token trong options phải khớp correctAnswer, kể cả từ lặp.
-Không trả TRANSLATION hoặc LISTENING.`;
+TRANSLATION: {type, vocabularyId, content là câu tiếng Anh tự nhiên có dùng từ vựng mục tiêu, instruction:"Dịch câu sau sang tiếng Việt.", correctAnswer là bản dịch tiếng Việt tự nhiên và chính xác, explanation, difficulty}; chỉ tạo dạng này khi TRANSLATION được yêu cầu và không thêm options hoặc matchingPairs.
+Không trả LISTENING hoặc bất kỳ loại nào ngoài danh sách được yêu cầu.`;
     }
 }
