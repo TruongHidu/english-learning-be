@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { EventEmitter } from "node:events";
 import { AppError } from "../src/errors/app-error.js";
 import { authorize } from "../src/middlewares/authorize.middleware.js";
 import type { IDiamondPackageRepository } from "../src/repositories/interfaces/diamond-package.repository.interface.js";
@@ -326,7 +327,7 @@ test("Admin deletes package successfully", async () => {
     );
 });
 
-test("RealtimeService.broadcast sends SSE payload to all registered clients", () => {
+test("RealtimeService.broadcast sends SSE payload to all registered clients", (t) => {
     const realtime = new RealtimeService();
     const messages1: string[] = [];
     const messages2: string[] = [];
@@ -336,14 +337,18 @@ test("RealtimeService.broadcast sends SSE payload to all registered clients", ()
         flushHeaders: () => {},
         write: (chunk: string) => { messages1.push(chunk); },
     } as any;
-    const mockReq1 = { on: () => {} } as any;
+    const mockReq1 = new EventEmitter() as any;
 
     const mockRes2 = {
         setHeader: () => {},
         flushHeaders: () => {},
         write: (chunk: string) => { messages2.push(chunk); },
     } as any;
-    const mockReq2 = { on: () => {} } as any;
+    const mockReq2 = new EventEmitter() as any;
+    t.after(() => {
+        mockReq1.emit("close");
+        mockReq2.emit("close");
+    });
 
     realtime.registerClient("userA", mockReq1, mockRes1);
     realtime.registerClient("userB", mockReq2, mockRes2);

@@ -1,4 +1,5 @@
 import { AppError } from "../errors/app-error.js";
+import { effectiveCurrentStreak } from "../utils/streak.js";
 import type { IUserRepository } from "../repositories/interfaces/user.repository.interface.js";
 import type { IPasswordHasher } from "../security/password-hasher.interface.js";
 import type { ITokenService } from "../security/token-service.interface.js";
@@ -148,7 +149,7 @@ export class AuthService {
                     diamond: syncedUser.stats.diamond,
                     totalXp: syncedUser.stats.totalXp,
                     level: syncedUser.stats.level,
-                    currentStreak: syncedUser.stats.currentStreak,
+                    currentStreak: effectiveCurrentStreak(syncedUser.stats),
                 },
             },
         };

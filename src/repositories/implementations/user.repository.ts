@@ -1,6 +1,6 @@
 import { UserModel, type UserDocument } from "../../models/user.model.js";
 import type { ClientSession } from "mongoose";
-import type { User } from "../../types/auth.types.js";
+import type { User, UserStats } from "../../types/auth.types.js";
 import type {
     CreateUserData,
     IUserRepository,
@@ -131,9 +131,21 @@ export class UserRepository implements IUserRepository {
             longestStreak: number;
             lastStudyDate: Date;
         },
+        expectedStats: UserStats,
     ): Promise<User | null> {
-        const document = await UserModel.findByIdAndUpdate(
-            userId,
+        const document = await UserModel.findOneAndUpdate(
+            {
+                _id: userId,
+                // Match missing legacy fields against the same defaults Mongoose applies.
+                $expr: { $and: [
+                    { $eq: [{ $ifNull: ["$stats.totalXp", 0] }, expectedStats.totalXp] },
+                    { $eq: [{ $ifNull: ["$stats.level", 1] }, expectedStats.level] },
+                    { $eq: [{ $ifNull: ["$stats.diamond", 0] }, expectedStats.diamond] },
+                    { $eq: [{ $ifNull: ["$stats.currentStreak", 0] }, expectedStats.currentStreak] },
+                    { $eq: [{ $ifNull: ["$stats.longestStreak", 0] }, expectedStats.longestStreak] },
+                    { $eq: [{ $ifNull: ["$stats.lastStudyDate", null] }, expectedStats.lastStudyDate ?? null] },
+                ] },
+            },
             {
                 $set: {
                     "stats.totalXp": statsUpdate.totalXp,

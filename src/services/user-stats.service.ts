@@ -1,5 +1,7 @@
 import type { UserStats } from "../types/auth.types.js";
 import type { IUserRepository } from "../repositories/interfaces/user.repository.interface.js";
+import { AppError } from "../errors/app-error.js";
+import { calculateStreakTransition, type StreakTransition } from "../utils/streak.js";
 
 export interface LessonRewardInput {
     correctCount: number;
@@ -47,44 +49,8 @@ export class UserStatsService {
         return { score, xpEarned, diamondEarned };
     }
 
-    calculateStreak(lastStudyDate: Date | undefined, now: Date): {
-        currentStreak: number;
-        longestStreak: number;
-    } {
-        if (!lastStudyDate) {
-            return { currentStreak: 1, longestStreak: 1 };
-        }
-
-        const toUtcDay = (d: Date): string =>
-            d.toISOString().slice(0, 10);
-
-        const todayStr = toUtcDay(now);
-        const lastStr = toUtcDay(lastStudyDate);
-
-        if (todayStr === lastStr) {
-            return { currentStreak: -1, longestStreak: -1 };
-        }
-
-        const msPerDay = 24 * 60 * 60 * 1000;
-        const todayMidnight = new Date(Date.UTC(
-            now.getUTCFullYear(),
-            now.getUTCMonth(),
-            now.getUTCDate(),
-        ));
-        const lastMidnight = new Date(Date.UTC(
-            lastStudyDate.getUTCFullYear(),
-            lastStudyDate.getUTCMonth(),
-            lastStudyDate.getUTCDate(),
-        ));
-        const diffDays = Math.round(
-            (todayMidnight.getTime() - lastMidnight.getTime()) / msPerDay,
-        );
-
-        if (diffDays === 1) {
-            return { currentStreak: 1, longestStreak: 1 };
-        }
-
-        return { currentStreak: 0, longestStreak: 0 };
+    calculateStreak(lastStudyDate: Date | undefined, now: Date): StreakTransition {
+        return calculateStreakTransition(lastStudyDate, now);
     }
 
     calculateLevel(totalXp: number): number {
@@ -99,37 +65,31 @@ export class UserStatsService {
         diamondEarned: number,
         now: Date = new Date(),
     ): Promise<UpdatedUserStats> {
-        const streakResult = this.calculateStreak(currentStats.lastStudyDate, now);
+        // CAS checks every stat used in the calculation. Retry only definite conflicts,
+        // never database/network errors whose write outcome may be unknown.
+        let snapshot = currentStats;
+        for (let attempt = 0; attempt < 10; attempt++) {
+            const transition = this.calculateStreak(snapshot.lastStudyDate, now);
+            const currentStreak = transition === "SAME_DAY" || transition === "FUTURE_ACTIVITY"
+                ? snapshot.currentStreak
+                : transition === "NEXT_DAY" ? snapshot.currentStreak + 1 : 1;
+            const totalXp = snapshot.totalXp + xpEarned;
+            const updatedStats: UpdatedUserStats = {
+                totalXp,
+                level: this.calculateLevel(totalXp),
+                diamond: snapshot.diamond + diamondEarned,
+                currentStreak,
+                longestStreak: Math.max(snapshot.longestStreak, currentStreak),
+                lastStudyDate: snapshot.lastStudyDate && snapshot.lastStudyDate > now
+                    ? snapshot.lastStudyDate : now,
+            };
+            const updated = await this.userRepository.updateStats(userId, updatedStats, snapshot);
+            if (updated) return updatedStats;
 
-        let newCurrentStreak: number;
-        let newLongestStreak: number;
-
-        if (streakResult.currentStreak === -1) {
-            newCurrentStreak = currentStats.currentStreak;
-            newLongestStreak = currentStats.longestStreak;
-        } else if (streakResult.currentStreak === 1) {
-            newCurrentStreak = currentStats.currentStreak + 1;
-            newLongestStreak = Math.max(currentStats.longestStreak, newCurrentStreak);
-        } else {
-            newCurrentStreak = 1;
-            newLongestStreak = Math.max(currentStats.longestStreak, 1);
+            const latest = await this.userRepository.findById(userId);
+            if (!latest) throw new AppError("USER_NOT_FOUND", "Không tìm thấy người dùng", 404);
+            snapshot = latest.stats;
         }
-
-        const newTotalXp = currentStats.totalXp + xpEarned;
-        const newLevel = this.calculateLevel(newTotalXp);
-        const newDiamond = currentStats.diamond + diamondEarned;
-
-        const updatedStats: UpdatedUserStats = {
-            totalXp: newTotalXp,
-            level: newLevel,
-            diamond: newDiamond,
-            currentStreak: newCurrentStreak,
-            longestStreak: newLongestStreak,
-            lastStudyDate: now,
-        };
-
-        await this.userRepository.updateStats(userId, updatedStats);
-
-        return updatedStats;
+        throw new AppError("USER_STATS_UPDATE_CONFLICT", "Thống kê đang được cập nhật, vui lòng thử lại", 409);
     }
 }

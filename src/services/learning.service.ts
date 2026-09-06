@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 
 import { AppError } from "../errors/app-error.js";
+import { effectiveCurrentStreak } from "../utils/streak.js";
 import {
     mapLearningQuestionToResponse,
     mapLearningSessionToResponse,
@@ -408,7 +409,7 @@ export class LearningService {
             diamondEarned: reward.diamondEarned,
             totalXp: updatedStats.totalXp,
             level: updatedStats.level,
-            currentStreak: updatedStats.currentStreak,
+            currentStreak: effectiveCurrentStreak(updatedStats),
             longestStreak: updatedStats.longestStreak,
             learnedVocabularyIds,
             isNextLessonUnlocked,

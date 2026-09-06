@@ -2,6 +2,7 @@ import { UserModel } from "../models/user.model.js";
 import { DiamondTransactionModel } from "../models/diamond-transaction.model.js";
 import { AppError } from "../errors/app-error.js";
 import { realtimeService } from "./realtime.service.js";
+import { effectiveCurrentStreak } from "../utils/streak.js";
 
 export interface GetUsersQuery {
     q?: string;
@@ -43,6 +44,7 @@ export class AdminDiamondService {
             UserModel.countDocuments(filter).exec(),
         ]);
 
+        const now = new Date();
         return {
             users: users.map((u) => ({
                 id: u._id.toString(),
@@ -54,7 +56,7 @@ export class AdminDiamondService {
                 currentHeart: u.stats?.currentHeart ?? 0,
                 maxHeart: u.stats?.maxHeart ?? 5,
                 totalXp: u.stats?.totalXp ?? 0,
-                currentStreak: u.stats?.currentStreak ?? 0,
+                currentStreak: effectiveCurrentStreak(u.stats, now),
                 createdAt: u.createdAt,
             })),
             total,
@@ -71,24 +73,25 @@ export class AdminDiamondService {
             throw new AppError("REASON_REQUIRED", "Vui lòng nhập lý do điều chỉnh", 400);
         }
 
-        const user = await UserModel.findById(userId).exec();
+        // Increment atomically so an admin adjustment cannot overwrite a learning reward.
+        const user = await UserModel.findOneAndUpdate(
+            { _id: userId, ...(amount < 0 ? { "stats.diamond": { $gte: -amount } } : {}) },
+            { $inc: { "stats.diamond": amount } },
+            { returnDocument: "after", runValidators: true },
+        ).exec();
         if (!user) {
-            throw new AppError("USER_NOT_FOUND", "Không tìm thấy người dùng", 404);
-        }
-
-        const currentDiamond = user.stats.diamond ?? 0;
-        const nextDiamond = currentDiamond + amount;
-
-        if (nextDiamond < 0) {
+            const existing = await UserModel.findById(userId).exec();
+            if (!existing) {
+                throw new AppError("USER_NOT_FOUND", "Không tìm thấy người dùng", 404);
+            }
             throw new AppError(
                 "INSUFFICIENT_DIAMOND",
-                `Không thể trừ vượt quá số dư hiện tại (Hiện có ${currentDiamond} 💎)`,
+                `Không thể trừ vượt quá số dư hiện tại (Hiện có ${existing.stats.diamond ?? 0} 💎)`,
                 400,
             );
         }
-
-        user.stats.diamond = nextDiamond;
-        await user.save();
+        const nextDiamond = user.stats.diamond;
+        const currentDiamond = nextDiamond - amount;
 
         const transaction = await DiamondTransactionModel.create({
             userId: user._id,

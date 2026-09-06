@@ -1,4 +1,5 @@
 import { AppError } from "../errors/app-error.js";
+import { effectiveCurrentStreak } from "../utils/streak.js";
 import type { IUserVocabularyRepository } from "../repositories/interfaces/user-vocabulary.repository.interface.js";
 import type { IVocabularyRepository } from "../repositories/interfaces/vocabulary.repository.interface.js";
 import type { UserStatsService } from "./user-stats.service.js";
@@ -94,7 +95,7 @@ export class VocabularyReviewService {
                 );
                 totalXp = updatedStats.totalXp;
                 level = updatedStats.level;
-                currentStreak = updatedStats.currentStreak;
+                currentStreak = effectiveCurrentStreak(updatedStats);
             }
         }
         

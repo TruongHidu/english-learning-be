@@ -27,9 +27,9 @@ import type { IUserRepository } from "../src/repositories/interfaces/user.reposi
 import type { IUserVocabularyRepository } from "../src/repositories/interfaces/user-vocabulary.repository.interface.js";
 import type { LearningProgressionService } from "../src/services/learning-progression.service.js";
 import type { HeartService } from "../src/services/heart.service.js";
-import type { UserStatsService } from "../src/services/user-stats.service.js";
+import { UserStatsService } from "../src/services/user-stats.service.js";
 import { LearningService } from "../src/services/learning.service.js";
-import type { User } from "../src/types/auth.types.js";
+import type { User, UserStats } from "../src/types/auth.types.js";
 
 const USER_ID = "64f000000000000000000001";
 const LESSON_ID = new Types.ObjectId("64f000000000000000000010");
@@ -299,24 +299,14 @@ const makeHarness = async (options?: {
         syncUserHearts: async () => user,
         deductHeart: async () => ({ user, heartsRemaining: Math.max(0, user.stats.currentHeart - 1), nextHeartAt: null }),
     } as unknown as HeartService;
-    const statsService = {
-        calculateLessonRewards: (input: { correctCount: number; totalQuestions: number; requiredScore: number; isAlreadyCompleted?: boolean }) => ({
-            score: Math.round((input.correctCount / input.totalQuestions) * 100),
-            xpEarned: input.isAlreadyCompleted ? 5 : 10,
-            diamondEarned: 5,
-        }),
-        applyLessonCompletionStats: async () => ({
-            totalXp: 10,
-            level: 1,
-            diamond: 5,
-            currentStreak: 1,
-            longestStreak: 1,
-            lastStudyDate: new Date(),
-        }),
-    } as unknown as UserStatsService;
     const userRepository = {
         findById: async () => user,
+        updateStats: async (_userId: string, stats: Partial<UserStats>) => {
+            Object.assign(user.stats, stats);
+            return user;
+        },
     } as unknown as IUserRepository;
+    const statsService = new UserStatsService(userRepository);
     const userVocabularyRepository = {
         upsertLearnedVocabularies: async () => undefined,
     } as unknown as IUserVocabularyRepository;
@@ -353,6 +343,8 @@ test("startLesson snapshots ordered questions and grading data", async () => {
         harness.questions[0]?._id.toString(),
     );
     assert.equal(harness.sessionRepository.session?.requiredScore, 70);
+    assert.equal(harness.user.stats.currentStreak, 0);
+    assert.equal(harness.user.stats.lastStudyDate, undefined);
 });
 
 test("rejects a Question that is not part of the session snapshot", async () => {
@@ -412,6 +404,9 @@ test("a score below requiredScore fails without completion, reward, learned voca
     assert.equal(harness.progressRepository.failedCalls, 1);
     assert.equal(harness.progressRepository.completedCalls, 0);
     assert.equal(harness.progressRepository.unlockedLessonIds.length, 0);
+    assert.equal(harness.user.stats.currentStreak, 0);
+    assert.equal(harness.user.stats.lastStudyDate, undefined);
+    assert.equal(harness.user.stats.totalXp, 0);
 });
 
 test("a score equal to requiredScore passes and unlocks the next lesson", async () => {
@@ -437,6 +432,14 @@ test("a score equal to requiredScore passes and unlocks the next lesson", async 
     assert.equal(response.isPassed, true);
     assert.equal(response.sessionStatus, "COMPLETED");
     assert.ok(response.rewards);
+    assert.equal(response.rewards.currentStreak, 1);
+    assert.equal(harness.user.stats.currentStreak, 1);
+    assert.deepEqual(Object.keys(response.rewards).sort(), [
+        "xpEarned", "diamondEarned", "totalXp", "level", "currentStreak", "longestStreak", "learnedVocabularyIds", "isNextLessonUnlocked",
+    ].sort());
+    assert.deepEqual(Object.keys(response).sort(), [
+        "isCorrect", "isPassed", "correctAnswer", "explanation", "heartsRemaining", "nextHeartAt", "sessionStatus", "correctCount", "wrongCount", "score", "rewards",
+    ].sort());
     assert.equal(harness.progressRepository.completedCalls, 1);
     assert.deepEqual(harness.progressRepository.unlockedLessonIds, [nextLesson.id.toString()]);
 });
