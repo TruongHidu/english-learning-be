@@ -511,7 +511,7 @@ export class AdminQuestionService {
         correctAnswer?: unknown;
         content: string;
     }): void {
-        if (!["MULTIPLE_CHOICE", "MATCHING", "FILL_BLANK", "ORDER_SENTENCE"].includes(question.type)) {
+        if (!["MULTIPLE_CHOICE", "MATCHING", "FILL_BLANK", "ORDER_SENTENCE", "TRANSLATION"].includes(question.type)) {
             throw new AppError(
                 "QUESTION_TYPE_NOT_LEARNABLE",
                 "Loại câu hỏi này chưa được trang học hỗ trợ",
@@ -564,6 +564,14 @@ export class AdminQuestionService {
                 throw new AppError(
                     "QUESTION_NOT_READY_TO_PUBLISH",
                     "Các cặp ghép phải có nội dung và không được trùng",
+                    400,
+                );
+            }
+        } else if (question.type === "TRANSLATION") {
+            if (typeof question.correctAnswer !== "string" || !question.correctAnswer.trim()) {
+                throw new AppError(
+                    "QUESTION_NOT_READY_TO_PUBLISH",
+                    "Câu hỏi dịch chưa có đáp án đúng để xuất bản",
                     400,
                 );
             }

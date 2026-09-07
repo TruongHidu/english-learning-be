@@ -1,4 +1,5 @@
 import adminDiamondRouter from './routes/admin-diamond.routes.js';
+import adminDiamondPackageRouter from './routes/admin-diamond-package.routes.js';
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -18,6 +19,8 @@ import learningPathRouter from "./routes/learning-path.routes.js";
 import sessionRouter from "./routes/session.routes.js";
 import userVocabularyRouter from "./routes/user-vocabulary.routes.js";
 import shopRouter from "./routes/shop.routes.js";
+import { createPaymentRouter } from "./routes/payment.routes.js";
+import { authenticate, paymentController } from "./config/container.js";
 
 const app = express();
 
@@ -45,6 +48,7 @@ app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/user", userVocabularyRouter);
 app.use("/api/v1/shop", shopRouter);
+app.use("/api/v1/payments", createPaymentRouter(paymentController, authenticate));
 app.use("/api/v1/courses", courseRouter);
 app.use("/api/v1/lessons", learningRouter);
 app.use("/api/v1/sessions", sessionRouter);
@@ -58,6 +62,7 @@ app.use("/api/v1/admin", adminQuestionRouter);
 app.use("/api/v1/admin", adminTopicAiRouter);
 app.use("/api/v1/admin/ai", adminAiRouter);
 app.use("/api/v1/admin", adminDiamondRouter);
+app.use("/api/v1/admin/diamond-packages", adminDiamondPackageRouter);
 
 app.use(errorHandler);
 

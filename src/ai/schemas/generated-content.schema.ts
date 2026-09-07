@@ -254,11 +254,22 @@ export const generatedOrderSentenceSchema = z
     .strict()
     .superRefine(refineOrderSentence);
 
+const translationShape = {
+    type: z.literal("TRANSLATION"),
+    ...commonQuestionFields,
+    correctAnswer: requiredText(2_000),
+};
+
+export const generatedTranslationSchema = z
+    .object(translationShape)
+    .strict();
+
 export const generatedQuestionCandidateSchema = z.discriminatedUnion("type", [
     generatedMultipleChoiceSchema,
     generatedMatchingSchema,
     generatedFillBlankSchema,
     generatedOrderSentenceSchema,
+    generatedTranslationSchema,
 ]);
 
 export const generatedQuestionCandidatesSchema = z
@@ -271,6 +282,7 @@ export const questionPreviewCandidateSchema = z.discriminatedUnion("type", [
     z.object({ ...matchingShape, ...previewQuestionFields }).strict().superRefine(refineMatching),
     z.object({ ...fillBlankShape, ...previewQuestionFields }).strict().superRefine(refineFillBlank),
     z.object({ ...orderSentenceShape, ...previewQuestionFields }).strict().superRefine(refineOrderSentence),
+    z.object({ ...translationShape, ...previewQuestionFields }).strict(),
 ]);
 
 export const questionPreviewCandidatesSchema = z
@@ -298,6 +310,7 @@ export type CommitVocabularyItem = z.infer<typeof commitVocabularyItemSchema>;
 export type GeneratedMultipleChoiceCandidate = z.infer<typeof generatedMultipleChoiceSchema>;
 export type GeneratedMatchingCandidate = z.infer<typeof generatedMatchingSchema>;
 export type GeneratedFillBlankCandidate = z.infer<typeof generatedFillBlankSchema>;
+export type GeneratedTranslationCandidate = z.infer<typeof generatedTranslationSchema>;
 export type GeneratedQuestionCandidate = z.infer<typeof generatedQuestionCandidateSchema>;
 export type QuestionPreviewCandidate = z.infer<typeof questionPreviewCandidateSchema>;
 export type CommitQuestionItem = z.infer<typeof questionPreviewCandidateSchema>;

@@ -46,10 +46,24 @@ import { AIGenerationRepository } from "../repositories/implementations/ai-gener
 import { AiVocabularyCommitRepository } from "../repositories/implementations/ai-vocabulary-commit.repository.js";
 import { AiQuestionCommitRepository } from "../repositories/implementations/ai-question-commit.repository.js";
 import { GeminiContentGenerator } from "../ai/providers/gemini-content-generator.js";
+import { GeminiTranslationEvaluator } from "../ai/providers/gemini-translation-evaluator.js";
+import {
+    TRANSLATION_GRADING_ENABLED,
+    TRANSLATION_TIMEOUT_MS,
+} from "./translation-grading.config.js";
 import { CloudinaryMediaStorage } from "../storage/cloudinary-media-storage.js";
 import { DiamondTransactionRepository } from "../repositories/implementations/diamond-transaction.repository.js";
+import { DiamondPackageRepository } from "../repositories/implementations/diamond-package.repository.js";
+import { AdminDiamondPackageService } from "../services/admin-diamond-package.service.js";
+import { AdminDiamondPackageController } from "../controllers/admin-diamond-package.controller.js";
+import { realtimeService } from "../services/realtime.service.js";
 import { ShopService } from "../services/shop.service.js";
 import { ShopController } from "../controllers/shop.controller.js";
+import { PaymentTransactionRepository } from "../repositories/implementations/payment-transaction.repository.js";
+import { VnpayGateway } from "../payments/vnpay.gateway.js";
+import { getVnpayConfig } from "./vnpay.config.js";
+import { PaymentService } from "../services/payment.service.js";
+import { PaymentController } from "../controllers/payment.controller.js";
 
 const userRepository = new UserRepository();
 const courseRepository = new CourseRepository();
@@ -63,6 +77,11 @@ const userLessonProgressRepository = new UserLessonProgressRepository();
 const learningSessionRepository = new LearningSessionRepository();
 const userVocabularyRepository = new UserVocabularyRepository();
 const diamondTransactionRepository = new DiamondTransactionRepository();
+const diamondPackageRepository = new DiamondPackageRepository();
+const paymentRepository = new PaymentTransactionRepository();
+const paymentGateway = new VnpayGateway(getVnpayConfig);
+const paymentService = new PaymentService(paymentRepository, diamondPackageRepository, userRepository, paymentGateway, getVnpayConfig);
+export const paymentController = new PaymentController(paymentService);
 const aiGenerationRepository = new AIGenerationRepository();
 const aiVocabularyCommitRepository = new AiVocabularyCommitRepository();
 const aiQuestionCommitRepository = new AiQuestionCommitRepository();
@@ -72,6 +91,13 @@ const tokenService = new JwtTokenService();
 const mediaStorage = new CloudinaryMediaStorage();
 const heartService = new HeartService(userRepository);
 const userStatsService = new UserStatsService(userRepository);
+const translationEvaluator = TRANSLATION_GRADING_ENABLED
+    ? new GeminiTranslationEvaluator({
+          apiKey: process.env.GEMINI_API_KEY,
+          modelName: process.env.AI_MODEL || "gemini-2.0-flash",
+          timeoutMs: TRANSLATION_TIMEOUT_MS,
+      })
+    : undefined;
 
 const authService = new AuthService(userRepository, passwordHasher, tokenService, heartService);
 const userService = new UserService(userRepository, passwordHasher, heartService, userVocabularyRepository);
@@ -114,9 +140,10 @@ export const learningService = new LearningService(
     heartService,
     userStatsService,
     userVocabularyRepository,
+    translationEvaluator,
 );
 const learningPathService = new LearningPathService(learningProgressionService);
-const shopService = new ShopService(userRepository, heartService, diamondTransactionRepository);
+const shopService = new ShopService(userRepository, heartService, diamondTransactionRepository, diamondPackageRepository);
 
 export const adminBootstrapService = new AdminBootstrapService(userRepository, passwordHasher);
 
@@ -203,3 +230,6 @@ export const authorizeUser = authorize("USER");
 
 const adminDiamondService = new AdminDiamondService();
 export const adminDiamondController = new AdminDiamondController(adminDiamondService);
+
+const adminDiamondPackageService = new AdminDiamondPackageService(diamondPackageRepository, realtimeService);
+export const adminDiamondPackageController = new AdminDiamondPackageController(adminDiamondPackageService);

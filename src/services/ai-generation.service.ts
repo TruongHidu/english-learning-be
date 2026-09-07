@@ -45,6 +45,7 @@ import type {
     GenerateVocabulariesInput,
     GenerateVocabulariesResult,
 } from "../types/ai.types.js";
+import { AI_SUPPORTED_QUESTION_TYPES } from "../types/ai.types.js";
 import type { VocabularyDifficulty } from "../types/vocabulary.types.js";
 import { mapLevelToDifficulty, normalizeQuestionType } from "../utils/ai-helper.utils.js";
 import {
@@ -265,13 +266,14 @@ export class AiGenerationService {
         input: CreateQuestionsGenerationInput,
     ): Promise<GenerateQuestionsResult> {
         const normalizedTypes = Array.from(new Set(input.questionTypes.map(normalizeQuestionType)));
+        const aiSupportedTypes = new Set<string>(AI_SUPPORTED_QUESTION_TYPES);
         const supportedTypes = normalizedTypes.filter((type) =>
-            ["MULTIPLE_CHOICE", "MATCHING", "FILL_BLANK", "ORDER_SENTENCE"].includes(type),
+            aiSupportedTypes.has(type),
         ) as GenerateQuestionPreviewInput["questionTypes"];
         if (supportedTypes.length !== normalizedTypes.length || supportedTypes.length === 0) {
             throw new AppError(
                 "AI_QUESTION_TYPE_NOT_SUPPORTED",
-                "AI Question chỉ hỗ trợ MULTIPLE_CHOICE, MATCHING, FILL_BLANK và ORDER_SENTENCE",
+                `AI Question chỉ hỗ trợ ${AI_SUPPORTED_QUESTION_TYPES.join(", ")}`,
                 400,
             );
         }

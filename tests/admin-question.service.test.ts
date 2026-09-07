@@ -214,3 +214,33 @@ test("bulk publish uses the validated bulk repository operation", async () => {
     assert.deepEqual(result.publishedIds, ids);
     assert.deepEqual(fixture.questions.map((question) => question.status), ["PUBLISHED", "PUBLISHED"]);
 });
+
+test("bulk publish accepts a TRANSLATION with a non-empty string answer", async () => {
+    const fixture = createFixture();
+    const translation = fixture.questions[0]!;
+    translation.type = "TRANSLATION";
+    translation.content = "My family often cooks pork.";
+    translation.instruction = "Dịch câu sau sang tiếng Việt.";
+    translation.correctAnswer = "Gia đình tôi thường nấu thịt lợn.";
+    translation.options = undefined;
+
+    const result = await fixture.service.bulkPublishQuestions([translation._id.toString()]);
+
+    assert.equal(result.modifiedCount, 1);
+    assert.equal(translation.status, "PUBLISHED");
+});
+
+test("bulk publish rejects a TRANSLATION with a blank answer", async () => {
+    const fixture = createFixture();
+    const translation = fixture.questions[0]!;
+    translation.type = "TRANSLATION";
+    translation.correctAnswer = "   ";
+    translation.options = undefined;
+
+    await assert.rejects(
+        fixture.service.bulkPublishQuestions([translation._id.toString()]),
+        (error: unknown) => error instanceof AppError
+            && error.code === "QUESTION_NOT_READY_TO_PUBLISH",
+    );
+    assert.equal(translation.status, "DRAFT");
+});

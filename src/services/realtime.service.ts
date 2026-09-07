@@ -1,9 +1,26 @@
 import type { Request, Response } from "express";
 
-export interface RealtimeEvent {
-    type: string;
-    [key: string]: unknown;
+export interface DiamondUpdatedEvent {
+    type: "DIAMOND_UPDATED";
+    diamond: number;
+    change?: number;
+    reason?: string;
+    balanceBefore?: number;
+    balanceAfter?: number;
 }
+
+export interface DiamondPackageUpdatedEvent {
+    type: "DIAMOND_PACKAGE_UPDATED";
+    action: "CREATED" | "UPDATED" | "DELETED";
+    packageId: string;
+}
+
+export interface ConnectedEvent {
+    type: "CONNECTED";
+    message: string;
+}
+
+export type RealtimeEvent = DiamondUpdatedEvent | DiamondPackageUpdatedEvent | ConnectedEvent;
 
 export class RealtimeService {
     private readonly clients = new Map<string, Set<Response>>();
@@ -56,6 +73,22 @@ export class RealtimeService {
                 client.write(payload);
             } catch {
                 userClients.delete(client);
+            }
+        }
+    }
+
+    broadcast(event: RealtimeEvent): void {
+        const payload = `data: ${JSON.stringify(event)}\n\n`;
+        for (const [userId, userClients] of this.clients.entries()) {
+            for (const client of userClients) {
+                try {
+                    client.write(payload);
+                } catch {
+                    userClients.delete(client);
+                }
+            }
+            if (userClients.size === 0) {
+                this.clients.delete(userId);
             }
         }
     }

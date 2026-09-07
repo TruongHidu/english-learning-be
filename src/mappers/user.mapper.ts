@@ -1,5 +1,6 @@
 import type { User } from "../types/auth.types.js";
 import type { UpdatedUserNameResponse, UserProfileResponse } from "../types/user.types.js";
+import { effectiveCurrentStreak } from "../utils/streak.js";
 
 export class UserMapper {
     static toProfileResponse(user: User): UserProfileResponse {
@@ -18,7 +19,7 @@ export class UserMapper {
                 diamond: user.stats.diamond,
                 totalXp: user.stats.totalXp,
                 level: user.stats.level,
-                currentStreak: user.stats.currentStreak,
+                currentStreak: effectiveCurrentStreak(user.stats),
                 longestStreak: user.stats.longestStreak,
             },
             createdAt: user.createdAt,

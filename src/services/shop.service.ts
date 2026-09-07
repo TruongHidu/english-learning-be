@@ -4,9 +4,10 @@ import mongoose from "mongoose";
 import { HEART_PURCHASE_DIAMOND_COST, HEART_PURCHASE_QUANTITY } from "../config/shop.config.js";
 import { HEART_REGEN_INTERVAL_MS } from "../config/heart.config.js";
 import { AppError } from "../errors/app-error.js";
+import type { IDiamondPackageRepository } from "../repositories/interfaces/diamond-package.repository.interface.js";
 import type { IDiamondTransactionRepository } from "../repositories/interfaces/diamond-transaction.repository.interface.js";
 import type { IUserRepository } from "../repositories/interfaces/user.repository.interface.js";
-import type { PurchaseHeartResponse, ShopResponse } from "../types/shop.types.js";
+import type { PurchaseHeartResponse, ShopDiamondPackage, ShopResponse } from "../types/shop.types.js";
 import type { HeartService } from "./heart.service.js";
 
 interface HeartPurchaseResult {
@@ -26,6 +27,7 @@ export class ShopService {
         private readonly userRepository: IUserRepository,
         private readonly heartService: HeartService,
         private readonly diamondTransactionRepository: IDiamondTransactionRepository,
+        private readonly diamondPackageRepository: IDiamondPackageRepository,
     ) { }
 
     async getShop(userId: string): Promise<ShopResponse> {
@@ -41,6 +43,19 @@ export class ShopService {
             : hasEnoughDiamond
                 ? null
                 : "INSUFFICIENT_DIAMOND";
+
+        const activePackages = await this.diamondPackageRepository.findActive();
+        const diamondPackages: ShopDiamondPackage[] = activePackages.map((pkg) => ({
+            id: pkg.id,
+            name: pkg.name,
+            diamondAmount: pkg.diamondAmount,
+            bonusDiamond: pkg.bonusDiamond,
+            totalDiamond: pkg.totalDiamond,
+            price: pkg.price,
+            currency: pkg.currency,
+            description: pkg.description,
+            orderIndex: pkg.orderIndex,
+        }));
 
         return {
             user: {
@@ -59,7 +74,7 @@ export class ShopService {
                 available: disabledReason === null,
                 disabledReason,
             }],
-            diamondPackages: [],
+            diamondPackages,
         };
     }
 

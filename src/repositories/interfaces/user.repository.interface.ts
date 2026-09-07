@@ -38,6 +38,7 @@ export interface IUserRepository {
             longestStreak: number;
             lastStudyDate: Date;
         },
+        expectedStats: UserStats,
     ): Promise<User | null>;
     purchaseHeart(
         userId: string,
