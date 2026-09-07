@@ -14,7 +14,7 @@ const schema = z.object({
         .default("https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"),
     VNPAY_RETURN_URL: callbackUrl.max(255),
     VNPAY_VERSION: z.literal("2.1.0").default("2.1.0"),
-    VNPAY_EXPIRE_MINUTES: z.coerce.number().int().min(1).max(60).default(15),
+    VNPAY_EXPIRE_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
     PAYMENT_FRONTEND_RESULT_URL: z.string().url().refine(value => {
         const url = new URL(value);
         return !url.username && !url.password && !url.search && !url.hash &&

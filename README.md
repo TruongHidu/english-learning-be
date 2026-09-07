@@ -4,13 +4,19 @@ Backend API cho ứng dụng học tiếng Anh, sử dụng Express, TypeScript 
 
 ## Thanh toán kim cương bằng VNPay Sandbox
 
+Mỗi user chỉ có một PENDING. Lịch sử hỗ trợ thanh toán lại và hủy; thời hạn mặc định
+10 phút, tự chuyển EXPIRED khi hết hạn. Retry gia hạn từ giờ server, giữ snapshot và mã
+giao dịch. Return SUCCESS hợp lệ đến muộn vẫn cộng đúng một lần sau CANCELLED/EXPIRED.
+Trước khi chạy bản mới trên DB cũ: dừng backend, chạy `npm.cmd run check:payment-pending`,
+sau đó `npm.cmd run migrate:payment-pending` để xử lý PENDING trùng và tạo unique index.
+
 Hướng dẫn cấu hình local, API contract và kiểm thử: [docs/vnpay.md](docs/vnpay.md).
 
 Checkout lưu giá và số kim cương tại thời điểm mua. Return URL xác minh VNPay rồi cập nhật
 payment, số dư và lịch sử TOP_UP trong cùng MongoDB transaction trước khi redirect về frontend.
 Frontend đọc trạng thái chính thức từ API một lần. Chức năng yêu cầu replica set.
 Luồng chỉ dành cho môn học/sandbox: không có IPN, queryDR hoặc đối soát, nên đóng tab/mất mạng
-trước Return có thể để giao dịch PENDING dù đã thanh toán.
+trước Return có thể khiến giao dịch chuyển EXPIRED dù đã thanh toán.
 
 ## Yêu cầu môi trường
 

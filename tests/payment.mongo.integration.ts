@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { before, after, test } from "node:test";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execFile, type ChildProcess } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -22,6 +24,7 @@ import { canonicalVnpayQuery, VnpayGateway } from "../src/payments/vnpay.gateway
 // Starts a NEW local replica set. Never reads .env or connects to the user's database.
 let mongod: ChildProcess | undefined;
 let directory: string | undefined;
+let testUri: string;
 const config = getVnpayConfig({ VNPAY_TMN_CODE: "TEST0001", VNPAY_HASH_SECRET: "test-secret",
     VNPAY_RETURN_URL: "https://test.example/return" });
 const repository = new PaymentTransactionRepository();
@@ -51,7 +54,8 @@ before(async () => {
         await bootstrap.connect();
         await bootstrap.db("admin").command({ replSetInitiate: { _id: "paymentTest", members: [{ _id: 0, host: `127.0.0.1:${port}` }] } });
     } finally { await bootstrap.close(); }
-    await mongoose.connect(`mongodb://127.0.0.1:${port}/payment_integration?replicaSet=paymentTest`, { serverSelectionTimeoutMS: 30000 });
+    testUri = `mongodb://127.0.0.1:${port}/payment_integration?replicaSet=paymentTest`;
+    await mongoose.connect(testUri, { serverSelectionTimeoutMS: 30000 });
     await Promise.all([UserModel.init(), DiamondPackageModel.init(), DiamondTransactionModel.init(), PaymentTransactionModel.init()]);
 });
 
@@ -145,4 +149,110 @@ test("real replica set: failures with provider sentinel zero do not collide or c
         assert.equal(payment!.providerTransactionId, undefined);
         assert.equal((await UserModel.findById(f.user._id))!.stats.diamond, 10);
     }
+});
+
+test("unique pending index enforces concurrent checkout and maps E11000 to payment conflict", async () => {
+    const f = await fixture();
+    await service.cancel(f.user.id, f.payment.id);
+    const results = await Promise.allSettled(Array.from({ length: 6 }, () =>
+        service.checkout(f.user.id, f.pkg.id, "127.0.0.1")));
+    assert.equal(results.filter(r => r.status === "fulfilled").length, 1);
+    for (const result of results) if (result.status === "rejected") assert.equal(result.reason.code, "PAYMENT_PENDING_EXISTS");
+    assert.equal(await PaymentTransactionModel.countDocuments({ userId: f.user._id, status: "PENDING" }), 1);
+    const { id: _id, status: _status, createdAt: _created, updatedAt: _updated, ...copy } = f.payment;
+    await assert.rejects(() => repository.create({ ...copy, transactionCode: "PAY" + randomBytes(16).toString("hex") }),
+        { code: "PAYMENT_PENDING_EXISTS" });
+    const other = await fixture();
+    assert.equal((await service.pending(other.user.id))!.status, "PENDING");
+});
+
+test("retry CAS allows one winner, checks deadline and preserves snapshot", async () => {
+    const f = await fixture();
+    const now = new Date(f.payment.expiresAt.getTime() - 300_000);
+    const end = new Date(now.getTime() + 600_000);
+    const results = await Promise.all(Array.from({ length: 5 }, () =>
+        repository.extendPendingPayment(f.payment, now, end)));
+    assert.equal(results.filter(Boolean).length, 1);
+    const saved = (await repository.findByCode(f.payment.transactionCode))!;
+    assert.equal(saved.expiresAt.toISOString(), end.toISOString());
+    assert.equal(saved.createdAt.toISOString(), f.payment.createdAt.toISOString());
+    assert.equal(saved.diamondAmount, f.payment.diamondAmount);
+    assert.equal(await repository.extendPendingPayment(saved, end, new Date(end.getTime() + 600_000)), null);
+    await repository.expirePendingByUser(f.user.id, end);
+    assert.equal((await repository.findByCode(saved.transactionCode))!.status, "EXPIRED");
+    const next = await service.checkout(f.user.id, f.pkg.id, "127.0.0.1");
+    assert.notEqual(next.paymentId, f.payment.id);
+});
+
+test("late success after cancel or expiration credits once while another pending remains", async () => {
+    for (const cancel of [true, false]) {
+        const f = await fixture();
+        if (cancel) await service.cancel(f.user.id, f.payment.id);
+        else await repository.expirePendingByUser(f.user.id, f.payment.expiresAt);
+        const next = await service.checkout(f.user.id, f.pkg.id, "127.0.0.1");
+        const callback = f.callback();
+        await Promise.all(Array.from({ length: 5 }, () => service.returnUrl(callback)));
+        assert.equal((await repository.findByCode(f.payment.transactionCode))!.status, "SUCCESS");
+        assert.equal((await UserModel.findById(f.user._id))!.stats.diamond, 130);
+        assert.equal(await DiamondTransactionModel.countDocuments({ referenceId: f.payment.id }), 1);
+        assert.equal((await service.getPayment(f.user.id, next.paymentId)).status, "PENDING");
+    }
+});
+
+test("retry, cancel and Return race cannot downgrade or double-credit success", async () => {
+    const f = await fixture();
+    const callback = f.callback();
+    await Promise.allSettled([
+        service.retry(f.user.id, f.payment.id, "127.0.0.1"),
+        service.cancel(f.user.id, f.payment.id),
+        service.returnUrl(callback),
+    ]);
+    await service.returnUrl(callback);
+    assert.equal((await repository.findByCode(f.payment.transactionCode))!.status, "SUCCESS");
+    assert.equal((await UserModel.findById(f.user._id))!.stats.diamond, 130);
+    assert.equal(await DiamondTransactionModel.countDocuments({ referenceId: f.payment.id }), 1);
+});
+
+test("expiration checks the updated deadline and never changes terminal payments", async () => {
+    const f = await fixture();
+    const now = new Date(f.payment.expiresAt.getTime() - 1000);
+    const end = new Date(now.getTime() + 600_000);
+    await repository.extendPendingPayment(f.payment, now, end);
+    await repository.expireAllPending(f.payment.expiresAt);
+    assert.equal((await repository.findByCode(f.payment.transactionCode))!.status, "PENDING");
+    await repository.expireAllPending(end);
+    await repository.expireAllPending(end);
+    assert.equal((await repository.findByCode(f.payment.transactionCode))!.status, "EXPIRED");
+    assert.equal((await UserModel.findById(f.user._id))!.stats.diamond, 10);
+});
+
+test("migration dry run preserves legacy data; apply keeps newest and creates unique index idempotently", async () => {
+    const collection = mongoose.connection.getClient().db("payment_migration_test").collection("paymenttransactions");
+    const userId = new mongoose.Types.ObjectId();
+    const date = new Date();
+    const future = new Date(date.getTime() + 600_000);
+    const ids = Array.from({ length: 4 }, () => new mongoose.Types.ObjectId());
+    await collection.insertMany([
+        { _id: ids[0], userId, status: "PENDING", expiresAt: future, createdAt: new Date(date.getTime() - 1000) },
+        { _id: ids[1], userId, status: "PENDING", expiresAt: future, createdAt: date },
+        { _id: ids[2], userId, status: "PENDING", expiresAt: new Date(0), createdAt: new Date(0) },
+        { _id: ids[3], userId, status: "SUCCESS", expiresAt: new Date(0), createdAt: new Date(0) },
+    ]);
+    const script = fileURLToPath(new URL("../src/scripts/migrate-payment-pending.js", import.meta.url));
+    const run = (apply: boolean) => promisify(execFile)(process.execPath, [script, ...(apply ? ["--apply"] : [])], {
+        env: { ...process.env, MONGODB_URI: testUri.replace("/payment_integration?", "/payment_migration_test?") },
+        windowsHide: true,
+    });
+    await run(false);
+    assert.equal(await collection.countDocuments({ status: "PENDING" }), 3);
+    await run(true);
+    assert.equal((await collection.findOne({ _id: ids[0] }))!.status, "CANCELLED");
+    assert.equal((await collection.findOne({ _id: ids[1] }))!.status, "PENDING");
+    assert.equal((await collection.findOne({ _id: ids[2] }))!.status, "EXPIRED");
+    assert.equal((await collection.findOne({ _id: ids[3] }))!.status, "SUCCESS");
+    await run(true);
+    assert.equal(await collection.countDocuments({}), 4);
+    const indexes = await collection.indexes();
+    assert.equal(indexes.find(i => i.name === "uniq_pending_payment_per_user")!.unique, true);
+    await assert.rejects(() => collection.insertOne({ userId, status: "PENDING", expiresAt: future }), { code: 11000 });
 });

@@ -29,8 +29,12 @@ const schema = new Schema<PaymentPersistence>({
     payDate: String,
     paidAt: Date,
     expiresAt: { type: Date, required: true },
+    retryVersion: { type: Number, default: 0 },
 }, { timestamps: true, versionKey: false });
 schema.index({ providerTransactionId: 1 }, { unique: true, partialFilterExpression: { providerTransactionId: { $type: "string" } } });
 schema.index({ userId: 1, createdAt: -1, _id: -1 });
 schema.index({ status: 1, createdAt: -1 });
+schema.index({ status: 1, expiresAt: 1 });
+schema.index({ userId: 1 }, { name: "uniq_pending_payment_per_user", unique: true,
+    partialFilterExpression: { status: "PENDING" } });
 export const PaymentTransactionModel = model<PaymentPersistence>("PaymentTransaction", schema);

@@ -17,6 +17,7 @@ export interface NewPayment {
 }
 
 export interface Payment extends NewPayment {
+    retryVersion?: number;
     id: string;
     status: PaymentStatus;
     providerTransactionId?: string;

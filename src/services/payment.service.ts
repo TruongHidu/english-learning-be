@@ -26,12 +26,19 @@ export class PaymentService {
         private readonly users: Pick<IUserRepository, "findById">,
         private readonly gateway: PaymentGateway,
         private readonly config: () => VnpayConfig,
+        private readonly now: () => Date = () => new Date(),
     ) {}
 
     async checkout(userId: string, packageId: string, ipAddress: string) {
         const config = this.config();
         const user = await this.users.findById(userId);
         if (!user || user.status !== "ACTIVE") throw new AppError("ACCOUNT_NOT_ACTIVE", "Tài khoản không thể thanh toán", 403);
+        const checkTime = this.now();
+        await this.payments.expirePendingByUser(userId, checkTime);
+        if (await this.payments.findActivePendingByUser(userId, checkTime)) {
+            throw new AppError("PAYMENT_PENDING_EXISTS",
+                "Bạn đang có một giao dịch chưa hoàn thành. Vui lòng thanh toán hoặc hủy giao dịch đó trước.", 409);
+        }
         const pkg = await this.packages.findById(packageId);
         if (!pkg || pkg.status !== "ACTIVE") throw new AppError("DIAMOND_PACKAGE_UNAVAILABLE", "Gói kim cương hiện không được bán", 400);
         const totalDiamond = pkg.diamondAmount + pkg.bonusDiamond;
@@ -40,7 +47,7 @@ export class PaymentService {
             !Number.isSafeInteger(pkg.bonusDiamond) || pkg.bonusDiamond < 0 || !Number.isSafeInteger(totalDiamond)) {
             throw new AppError("INVALID_PAYMENT_PACKAGE", "Giá hoặc số kim cương không hợp lệ", 400);
         }
-        const createdAt = new Date();
+        const createdAt = this.now();
         const payment = await this.payments.create({
             userId, packageId: pkg.id,
             packageCodeSnapshot: pkg.code, packageNameSnapshot: pkg.name,
@@ -94,7 +101,8 @@ export class PaymentService {
             }
             url.searchParams.set("paymentId", payment.id);
             url.searchParams.set("transactionCode", payment.transactionCode);
-            if (payment.status !== "PENDING") return redirect("processed");
+            if (payment.status !== "PENDING" &&
+                !(success && ["CANCELLED", "EXPIRED"].includes(payment.status))) return redirect("processed");
             // Do not reject delayed returns based on local expiry or reread the package.
             // Failed VNPay callbacks can use TransactionNo=0: never store that as a unique provider ID.
             await this.payments.confirm(payment, {
@@ -116,13 +124,63 @@ export class PaymentService {
     }
 
     async getPayment(userId: string, paymentId: string) {
+        await this.payments.expirePendingByUser(userId, this.now());
         const payment = await this.payments.findOwned(paymentId, userId);
         if (!payment) throw new AppError("PAYMENT_NOT_FOUND", "Không tìm thấy giao dịch", 404);
         return publicPayment(payment);
     }
 
     async history(userId: string, page: number, limit: number) {
+        await this.payments.expirePendingByUser(userId, this.now());
         const { payments, total } = await this.payments.listOwned(userId, page, limit);
         return { payments: payments.map(publicPayment), total, page, limit, totalPages: Math.ceil(total / limit) };
+    }
+
+    async pending(userId: string) {
+        const now = this.now();
+        await this.payments.expirePendingByUser(userId, now);
+        const payment = await this.payments.findActivePendingByUser(userId, now);
+        return payment ? publicPayment(payment) : null;
+    }
+
+    private async owned(userId: string, paymentId: string) {
+        const payment = await this.payments.findOwned(paymentId, userId);
+        if (!payment) throw new AppError("PAYMENT_NOT_FOUND", "Không tìm thấy giao dịch", 404);
+        return payment;
+    }
+
+    async retry(userId: string, paymentId: string, ipAddress: string) {
+        const user = await this.users.findById(userId);
+        if (!user || user.status !== "ACTIVE") throw new AppError("ACCOUNT_NOT_ACTIVE", "Tài khoản không thể thanh toán", 403);
+        await this.owned(userId, paymentId);
+        await this.payments.expirePendingByUser(userId, this.now());
+        const payment = await this.owned(userId, paymentId);
+        if (payment.status === "EXPIRED") throw new AppError("PAYMENT_EXPIRED", "Giao dịch đã hết hạn. Vui lòng tạo giao dịch mới.", 409);
+        if (payment.status !== "PENDING") throw new AppError("PAYMENT_NOT_PENDING", "Giao dịch không còn chờ thanh toán.", 409);
+        const now = this.now();
+        if (payment.expiresAt <= now) {
+            await this.payments.expirePendingByUser(userId, now);
+            throw new AppError("PAYMENT_EXPIRED", "Giao dịch đã hết hạn. Vui lòng tạo giao dịch mới.", 409);
+        }
+        const expiresAt = new Date(now.getTime() + this.config().VNPAY_EXPIRE_MINUTES * 60_000);
+        // Sign before changing the database; signing failure must not extend the deadline.
+        // createdAt of the payment remains the original purchase date; only the URL uses now.
+        const paymentUrl = this.gateway.createPaymentUrl({ ...payment, createdAt: now, expiresAt, ipAddress });
+        const updated = await this.payments.extendPendingPayment(payment, now, expiresAt);
+        if (!updated) throw new AppError("PAYMENT_NOT_PENDING", "Giao dịch vừa thay đổi. Vui lòng tải lại trước khi tiếp tục.", 409);
+        return { paymentId: updated.id, transactionCode: updated.transactionCode,
+            status: updated.status, paymentUrl, expiresAt: updated.expiresAt.toISOString() };
+    }
+
+    async cancel(userId: string, paymentId: string) {
+        await this.owned(userId, paymentId);
+        const now = this.now();
+        await this.payments.expirePendingByUser(userId, now);
+        const updated = await this.payments.cancelPendingPayment(paymentId, userId, now);
+        const payment = updated ?? await this.owned(userId, paymentId);
+        if (!["CANCELLED", "EXPIRED"].includes(payment.status)) {
+            throw new AppError("PAYMENT_NOT_PENDING", "Giao dịch không còn chờ thanh toán.", 409);
+        }
+        return publicPayment(payment);
     }
 }

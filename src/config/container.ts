@@ -64,6 +64,7 @@ import { VnpayGateway } from "../payments/vnpay.gateway.js";
 import { getVnpayConfig } from "./vnpay.config.js";
 import { PaymentService } from "../services/payment.service.js";
 import { PaymentController } from "../controllers/payment.controller.js";
+import { PaymentExpirationService } from "../services/payment-expiration.service.js";
 
 const userRepository = new UserRepository();
 const courseRepository = new CourseRepository();
@@ -79,6 +80,7 @@ const userVocabularyRepository = new UserVocabularyRepository();
 const diamondTransactionRepository = new DiamondTransactionRepository();
 const diamondPackageRepository = new DiamondPackageRepository();
 const paymentRepository = new PaymentTransactionRepository();
+export const paymentExpirationService = new PaymentExpirationService(paymentRepository);
 const paymentGateway = new VnpayGateway(getVnpayConfig);
 const paymentService = new PaymentService(paymentRepository, diamondPackageRepository, userRepository, paymentGateway, getVnpayConfig);
 export const paymentController = new PaymentController(paymentService);

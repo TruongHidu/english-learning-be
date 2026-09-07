@@ -3,6 +3,23 @@ import type { PaymentService } from "../services/payment.service.js";
 
 export class PaymentController {
     constructor(private readonly service: PaymentService) {}
+    pending: RequestHandler = async (req, res, next) => {
+        try { res.json({ success: true, message: "Lấy giao dịch đang chờ thành công", data: await this.service.pending(req.user!.id) }); }
+        catch (error) { next(error); }
+    };
+    retry: RequestHandler = async (req, res, next) => {
+        try {
+            const data = await this.service.retry(req.user!.id, res.locals.validatedParams.paymentId,
+                req.ip ?? req.socket.remoteAddress ?? "127.0.0.1");
+            res.json({ success: true, message: "Gia hạn giao dịch thành công", data });
+        } catch (error) { next(error); }
+    };
+    cancel: RequestHandler = async (req, res, next) => {
+        try {
+            const data = await this.service.cancel(req.user!.id, res.locals.validatedParams.paymentId);
+            res.json({ success: true, message: data.status === "EXPIRED" ? "Giao dịch đã hết hạn" : "Hủy giao dịch thành công", data });
+        } catch (error) { next(error); }
+    };
 
     checkout: RequestHandler = async (req, res, next) => {
         try {

@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "check:payment-pending": "tsx src/scripts/migrate-payment-pending.ts",
+    "migrate:payment-pending": "tsx src/scripts/migrate-payment-pending.ts --apply",
     "build": "tsc",
     "test": "tsc -p tsconfig.test.json && node --test .test-dist/tests/*.test.js",
     "test:streak:integration": "tsc -p tsconfig.test.json && node --test .test-dist/tests/user-stats.mongo.integration.js",

@@ -3,7 +3,7 @@
 Luồng dành cho dự án môn học: checkout → VNPay → Return URL backend → frontend.
 Backend xác minh và cập nhật database trước khi chuyển hướng trình duyệt về frontend.
 Không có IPN, queryDR hoặc job đối soát. Nếu đóng tab, mất mạng hoặc Return không tới
-backend, giao dịch có thể vẫn PENDING dù đã thanh toán. Không sử dụng luồng này cho production.
+backend, giao dịch có thể tự chuyển EXPIRED dù đã thanh toán. Không sử dụng luồng này cho production.
 
 ## Cấu hình
 
@@ -18,7 +18,7 @@ VNPAY_HASH_SECRET=your-sandbox-secret
 VNPAY_PAYMENT_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
 VNPAY_RETURN_URL=http://localhost:5000/api/v1/payments/vnpay/return
 VNPAY_VERSION=2.1.0
-VNPAY_EXPIRE_MINUTES=15
+VNPAY_EXPIRE_MINUTES=10
 PAYMENT_FRONTEND_RESULT_URL=http://localhost:5173/payment/result
 FRONTEND_URL=http://localhost:5173
 ```
@@ -52,6 +52,9 @@ IP client lấy từ req.ip/socket; không tự tin tưởng X-Forwarded-For c�
 | GET /api/v1/payments/vnpay/return | Public, xác minh callback | HTTP 302 sau khi xử lý |
 | GET /api/v1/payments/me?page=1&limit=20 | USER | Lịch sử của chính user |
 | GET /api/v1/payments/:paymentId | USER | Trạng thái của payment thuộc user |
+| GET /api/v1/payments/pending | USER | PaymentDetail hoặc null |
+| POST /api/v1/payments/:paymentId/retry | USER, chủ sở hữu | Gia hạn và trả URL mới |
+| POST /api/v1/payments/:paymentId/cancel | USER, chủ sở hữu | PaymentDetail CANCELLED/EXPIRED |
 
 Endpoint /api/v1/payments/vnpay/ipn đã được loại bỏ (404).
 Checkout chỉ nhận `{ "packageId": "MongoDB ObjectId" }`; trường dư bị từ chối.
@@ -95,16 +98,74 @@ ngày thanh toán nếu có. SUCCESS cần mã giao dịch VNPay dạng số h�
 | ResponseCode=11 | EXPIRED |
 | Các kết quả hợp lệ khác | FAILED |
 
-Sai chữ ký/payload không thay đổi DB. Không tự hết hạn PENDING dựa trên expiresAt:
-expiresAt là hạn checkout, không phải TTL xóa payment. Return hợp lệ đến muộn vẫn xử lý.
-Payment terminal không bị ghi đè hoặc hạ cấp bởi callback tiếp theo.
+Sai chữ ký/payload không thay đổi DB. PENDING có expiresAt <= giờ server tự chuyển EXPIRED.
+Không có TTL xóa payment. Return SUCCESS hợp lệ đến muộn được phép chuyển CANCELLED/EXPIRED
+sang SUCCESS; FAILED không được mở lại. SUCCESS không bao giờ bị hạ cấp.
 
-Conditional update PENDING và unique transactionCode/providerTransactionId/TOP_UP referenceId
+Conditional update theo trạng thái và unique transactionCode/providerTransactionId/TOP_UP referenceId
 bảo vệ callback lặp và đồng thời. Chỉ SUCCESS cộng User.stats.diamond và ghi DiamondTransaction;
 payment, wallet và ledger commit trong cùng MongoDB transaction. Lỗi rollback toàn bộ.
 TransactionNo=0 ở kết quả không thành công không được lưu vào unique provider ID.
 Tài khoản bị khóa sau checkout vẫn được cộng nếu giao dịch hợp lệ; thiếu wallet gây rollback.
-Bảo đảm unique indexes được tạo; dữ liệu trùng cũ cần đối soát trước, không tự xóa/gộp.
+Bảo đảm unique indexes được tạo; chạy migration bên dưới để xử lý PENDING trùng trước khi start.
+
+## Một giao dịch đang chờ, thanh toán lại và hủy
+
+Mỗi user chỉ có một PENDING, được bảo vệ bằng unique partial index
+`uniq_pending_payment_per_user` trên userId với điều kiện status=PENDING.
+Checkout kiểm tra payment đang chờ và xử lý E11000 đúng index thành HTTP 409
+`PAYMENT_PENDING_EXISTS`; không trả nhầm EMAIL_ALREADY_EXISTS.
+Các trạng thái đã hoàn tất được giữ nguyên trong lịch sử, không giới hạn số lượng.
+
+Thời hạn mặc định 10 phút, dùng VNPAY_EXPIRE_MINUTES. Nếu .env cũ đang đặt 15,
+đổi thành 10 rồi restart; mặc định chỉ áp dụng khi biến chưa được đặt.
+
+GET pending, checkout, detail, history, retry và cancel cập nhật EXPIRED trước khi xử lý.
+Sweeper chạy lúc startup và mỗi 30 giây sau khi Mongo kết nối, không cần VNPay credentials.
+Sweeper dùng updateMany có điều kiện, không tải toàn bộ database vào bộ nhớ; có start/stop,
+unref, chặn chạy chồng và tiếp tục sau lỗi. Backend dừng thì sweeper dừng; khi khởi động
+lại sẽ xử lý những payment quá hạn. Không dùng TTL để xóa lịch sử.
+
+Retry/cancel chỉ nhận body rỗng (hoặc {}), không nhận giá, số kim cương, userId hay expiresAt.
+Ownership không đúng trả 404 PAYMENT_NOT_FOUND.
+
+Retry chỉ áp dụng PENDING còn hạn. Response data gồm paymentId, transactionCode, status,
+paymentUrl và expiresAt. Gia hạn từ thời gian server hiện tại cộng 10 phút (theo cấu hình),
+giữ paymentId, transactionCode và snapshot. createdAt của bản ghi lịch sử không đổi;
+vnp_CreateDate trong URL dùng thời điểm retry, vnp_ExpireDate dùng hạn mới.
+Ký URL trước khi ghi gia hạn để lỗi ký không thay đổi deadline. Conditional update kiểm tra
+status, expiresAt > now, hạn cũ và retryVersion để chỉ một request từ cùng phiên bản thắng.
+PAYMENT_EXPIRED (409) khi hết hạn; PAYMENT_NOT_PENDING (409) khi terminal hoặc có thay đổi
+đồng thời. FE tải lại rồi người dùng quyết định thao tác tiếp; không tự retry POST.
+
+Cancel còn hạn chuyển CANCELLED, quá hạn chuyển EXPIRED. Gọi lại trên CANCELLED/EXPIRED
+trả trạng thái hiện tại (idempotent), trên SUCCESS/FAILED trả PAYMENT_NOT_PENDING (409).
+Không đụng ví/ledger. Cancel/expire không thu hồi được URL đã phát hành tại VNPay.
+Nếu Return SUCCESS hợp lệ đến muộn, payment được xác nhận trong cùng transaction với
+ví và ledger, đúng một lần, kể cả user đã tạo payment PENDING mới. Callback thất bại
+chỉ đổi PENDING; không hạ cấp SUCCESS.
+
+Các URL cũ đã phát hành vẫn có thể tồn tại; retry giữ cùng mã tham chiếu theo thiết kế demo.
+Không đảm bảo việc gia hạn local sẽ thay đổi phiên đã mở tại VNPay. Cần thử thực tế Sandbox
+đối với merchant đang dùng; không coi nút hủy local là thao tác hủy/hoàn tiền ở ngân hàng.
+
+## Migration dữ liệu cũ và tạo index
+
+Dừng các tiến trình backend/worker ghi payment trước khi apply, sao lưu DB nếu cần.
+Script dùng collection trực tiếp và autoIndex=false để không tạo index trước khi xử lý trùng.
+
+```powershell
+npm.cmd run check:payment-pending
+npm.cmd run migrate:payment-pending
+```
+
+Lệnh check chỉ thống kê payment hết hạn, số user có nhiều PENDING và số dư thừa.
+Apply chuyển payment quá hạn sang EXPIRED; trong các PENDING còn lại của mỗi user giữ
+payment mới nhất theo createdAt/_id, chuyển các payment dư sang CANCELLED, rồi tạo
+unique index và index status/expiresAt. Không xóa/gộp bản ghi hoặc đổi ví/ledger.
+Chạy lại an toàn; chỉ in số lượng, không log thông tin tài khoản hay secret.
+Với autoIndex=false vẫn phải chạy migrate để tạo index trước khi nhận checkout.
+Backend chờ PaymentTransactionModel.init() trước khi nhận request (autoIndex bật).
 
 FE tải lại shop và số dư một lần khi API trả SUCCESS. Không tự polling chờ callback.
 Nút “Kiểm tra lại” chỉ đọc lại DB; không chạy lại ghi nhận thanh toán.
@@ -133,7 +194,8 @@ Test sandbox thủ công: đăng nhập USER, mua gói tại shop, hoàn tất/h
 Kiểm tra redirect về /payment/result, GET detail trả đúng trạng thái, SUCCESS tăng số dư
 đúng snapshot và chỉ có một TOP_UP. Reload Return không cộng lần hai.
 Thử sửa query FE để xác nhận không thể giả SUCCESS. Thử đóng tab trước Return để quan sát
-giới hạn PENDING. Chỉ dùng tài khoản/thẻ test theo tài liệu sandbox.
+giới hạn EXPIRED khi thiếu Return. Thử retry trong lịch sử trước hạn, hủy, và mở hai tab
+checkout cùng lúc. Chỉ dùng tài khoản/thẻ test theo tài liệu sandbox.
 
 Tài liệu tham khảo: [VNPay PAY 2.1.0](https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay.html),
 [bảng mã kết quả](https://sandbox.vnpayment.vn/apis/docs/bang-ma-loi/).
