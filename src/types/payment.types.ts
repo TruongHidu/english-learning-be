@@ -31,7 +31,7 @@ export interface Payment extends NewPayment {
 }
 
 export interface PaymentConfirmation {
-    status: "SUCCESS" | "FAILED";
+    status: "SUCCESS" | "FAILED" | "CANCELLED" | "EXPIRED";
     providerTransactionId?: string;
     responseCode: string;
     transactionStatus: string;
@@ -39,9 +39,4 @@ export interface PaymentConfirmation {
     cardType?: string;
     payDate?: string;
     paidAt?: Date;
-}
-
-export interface IpnResponse {
-    RspCode: "00" | "01" | "02" | "04" | "97" | "99";
-    Message: string;
 }

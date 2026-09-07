@@ -23,7 +23,7 @@ import { canonicalVnpayQuery, VnpayGateway } from "../src/payments/vnpay.gateway
 let mongod: ChildProcess | undefined;
 let directory: string | undefined;
 const config = getVnpayConfig({ VNPAY_TMN_CODE: "TEST0001", VNPAY_HASH_SECRET: "test-secret",
-    VNPAY_RETURN_URL: "https://test.example/return", VNPAY_IPN_URL: "https://test.example/ipn" });
+    VNPAY_RETURN_URL: "https://test.example/return" });
 const repository = new PaymentTransactionRepository();
 const packages = new DiamondPackageRepository();
 const service = new PaymentService(repository, packages, new UserRepository(), new VnpayGateway(() => config), () => config);
@@ -83,16 +83,15 @@ async function fixture() {
     return { user, pkg, checkout, payment, callback };
 }
 
-test("real replica set: parallel IPNs credit once, snapshot survives package deactivation", async () => {
+test("real replica set: parallel returns credit once, snapshot survives package deactivation", async () => {
     const f = await fixture();
     await packages.update(f.pkg.id, { price: 99000, diamondAmount: 1000 });
     assert.equal(await packages.delete(f.pkg.id), true);
     assert.equal((await packages.findById(f.pkg.id))!.status, "INACTIVE");
     assert.equal((await packages.findActive()).some(p => p.id === f.pkg.id), false);
     const callback = f.callback();
-    const results = await Promise.all(Array.from({ length: 6 }, () => service.ipn(callback)));
-    assert.equal(results.filter(r => r.RspCode === "00").length, 1);
-    assert.equal(results.filter(r => r.RspCode === "02").length, 5);
+    const results = await Promise.all(Array.from({ length: 6 }, () => service.returnUrl(callback)));
+    assert.ok(results.every(r => new URL(r).searchParams.get("returnResult") === "processed"));
     const savedUser = await UserModel.findById(f.user._id).lean();
     assert.equal(savedUser!.stats.diamond, 130);
     const ledger = await DiamondTransactionModel.find({ referenceId: f.payment.id }).lean();
@@ -107,7 +106,7 @@ test("real replica set: ledger duplicate rolls back wallet and payment status", 
     const f = await fixture();
     await DiamondTransactionModel.create({ userId: f.user._id, amount: 1, type: "TOP_UP", referenceType: "PAYMENT",
         referenceId: f.payment.id, balanceBefore: 0, balanceAfter: 1 });
-    assert.equal((await service.ipn(f.callback())).RspCode, "99");
+    assert.equal(new URL(await service.returnUrl(f.callback())).searchParams.get("returnResult"), "error");
     assert.equal((await UserModel.findById(f.user._id))!.stats.diamond, 10);
     assert.equal((await repository.findByCode(f.payment.transactionCode))!.status, "PENDING");
 });
@@ -117,18 +116,18 @@ test("real replica set: missing wallet rolls back payment and allows recovery re
     const original = f.user.toObject();
     await UserModel.deleteOne({ _id: f.user._id });
     const callback = f.callback();
-    assert.equal((await service.ipn(callback)).RspCode, "99");
+    assert.equal(new URL(await service.returnUrl(callback)).searchParams.get("returnResult"), "error");
     assert.equal((await repository.findByCode(f.payment.transactionCode))!.status, "PENDING");
     assert.equal(await DiamondTransactionModel.countDocuments({ referenceId: f.payment.id }), 0);
     await UserModel.create(original);
-    assert.equal((await service.ipn(callback)).RspCode, "00");
+    assert.equal(new URL(await service.returnUrl(callback)).searchParams.get("returnResult"), "processed");
 });
 
 test("real replica set: duplicate provider ID cannot credit another payment; ownership enforced", async () => {
     const a = await fixture(); const b = await fixture();
     const providerId = "999999999999999";
-    assert.equal((await service.ipn(a.callback({ vnp_TransactionNo: providerId }))).RspCode, "00");
-    assert.equal((await service.ipn(b.callback({ vnp_TransactionNo: providerId }))).RspCode, "99");
+    assert.equal(new URL(await service.returnUrl(a.callback({ vnp_TransactionNo: providerId }))).searchParams.get("returnResult"), "processed");
+    assert.equal(new URL(await service.returnUrl(b.callback({ vnp_TransactionNo: providerId }))).searchParams.get("returnResult"), "error");
     assert.equal((await UserModel.findById(b.user._id))!.stats.diamond, 10);
     assert.equal((await repository.findByCode(b.payment.transactionCode))!.status, "PENDING");
     await assert.rejects(() => service.getPayment(b.user.id, a.payment.id), /Không tìm thấy/);
@@ -140,9 +139,9 @@ test("real replica set: duplicate provider ID cannot credit another payment; own
 test("real replica set: failures with provider sentinel zero do not collide or credit", async () => {
     for (let i = 0; i < 2; i++) {
         const f = await fixture();
-        assert.equal((await service.ipn(f.callback({ vnp_ResponseCode: "24", vnp_TransactionStatus: "02", vnp_TransactionNo: "0" }))).RspCode, "00");
+        assert.equal(new URL(await service.returnUrl(f.callback({ vnp_ResponseCode: "24", vnp_TransactionStatus: "02", vnp_TransactionNo: "0" }))).searchParams.get("returnResult"), "processed");
         const payment = await repository.findByCode(f.payment.transactionCode);
-        assert.equal(payment!.status, "FAILED");
+        assert.equal(payment!.status, "CANCELLED");
         assert.equal(payment!.providerTransactionId, undefined);
         assert.equal((await UserModel.findById(f.user._id))!.stats.diamond, 10);
     }

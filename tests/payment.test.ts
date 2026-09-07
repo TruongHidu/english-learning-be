@@ -19,7 +19,6 @@ import { paymentCheckoutSchema } from "../src/validators/payment.validator.js";
 export const config = getVnpayConfig({
     VNPAY_TMN_CODE: "TEST0001", VNPAY_HASH_SECRET: "local-test-secret",
     VNPAY_RETURN_URL: "https://test.example/api/v1/payments/vnpay/return",
-    VNPAY_IPN_URL: "https://test.example/api/v1/payments/vnpay/ipn",
 });
 const gateway = new VnpayGateway(() => config);
 function signed(params: Record<string, string>): Record<string, string> {
@@ -106,73 +105,121 @@ test("checkout saves snapshot before URL, multiplies amount and rejects client p
     f.pkg.status = "INACTIVE";
     await assert.rejects(f.start, /không được bán/);
 });
-test("IPN validates signature, merchant, reference, amount and payload without writes", async () => {
+test("Return validates signature, merchant, reference, amount and payload without writes", async () => {
     const f = fixture(); await f.start();
-    assert.equal((await f.service.ipn({ ...f.callback(), vnp_SecureHash: "bad" })).RspCode, "97");
-    assert.equal((await f.service.ipn(f.callback({ vnp_TmnCode: "OTHER001" }))).RspCode, "99");
-    assert.equal((await f.service.ipn(f.callback({ vnp_TxnRef: "unknown" }))).RspCode, "01");
-    assert.equal((await f.service.ipn(f.callback({ vnp_Amount: "1" }))).RspCode, "04");
-    assert.equal((await f.service.ipn(f.callback({ vnp_TransactionNo: "0" }))).RspCode, "99");
-    assert.equal((await f.service.ipn(f.callback({ vnp_ResponseCode: "" }))).RspCode, "99");
+    assert.equal(new URL(await f.service.returnUrl({ ...f.callback(), vnp_SecureHash: "bad" })).searchParams.get("returnResult"), "invalid");
+    assert.equal(new URL(await f.service.returnUrl(f.callback({ vnp_TmnCode: "OTHER001" }))).searchParams.get("returnResult"), "invalid");
+    assert.equal(new URL(await f.service.returnUrl(f.callback({ vnp_TxnRef: "unknown" }))).searchParams.get("returnResult"), "not_found");
+    assert.equal(new URL(await f.service.returnUrl(f.callback({ vnp_Amount: "1" }))).searchParams.get("returnResult"), "invalid");
+    assert.equal(new URL(await f.service.returnUrl(f.callback({ vnp_TransactionNo: "0" }))).searchParams.get("returnResult"), "invalid");
+    assert.equal(new URL(await f.service.returnUrl(f.callback({ vnp_ResponseCode: "" }))).searchParams.get("returnResult"), "invalid");
     assert.equal(f.payments.diamond, 10);
     assert.equal(f.payments.rows[0]!.status, "PENDING");
 });
-test("successful IPN accepts optional PayDate and numeric provider IDs with leading zero", async () => {
+test("successful Return accepts optional PayDate and numeric provider IDs with leading zero", async () => {
     const f = fixture(); await f.start();
     const params = f.callback({ vnp_TransactionNo: "001234567" });
     delete params.vnp_PayDate;
     delete params.vnp_SecureHash;
-    const result = await f.service.ipn(signed(params));
-    assert.equal(result.RspCode, "00");
+    const result = await f.service.returnUrl(signed(params));
+    assert.equal(new URL(result).searchParams.get("returnResult"), "processed");
     assert.equal(f.payments.rows[0]!.status, "SUCCESS");
     assert.equal(f.payments.rows[0]!.providerTransactionId, "001234567");
     assert.equal(f.payments.rows[0]!.paidAt, undefined);
     assert.equal(f.payments.diamond, 130);
 });
-test("IPN rejects PayDate only when the optional value is present and malformed", async () => {
+test("Return rejects PayDate only when the optional value is present and malformed", async () => {
     const f = fixture(); await f.start();
-    const result = await f.service.ipn(f.callback({ vnp_PayDate: "20260231010000" }));
-    assert.equal(result.RspCode, "99");
-    assert.equal(result.Message, "Invalid pay date");
+    const result = await f.service.returnUrl(f.callback({ vnp_PayDate: "20260231010000" }));
+    assert.equal(new URL(result).searchParams.get("returnResult"), "invalid");
     assert.equal(f.payments.rows[0]!.status, "PENDING");
     assert.equal(f.payments.diamond, 10);
 });
-test("IPN credits snapshot exactly once even after package change and repeated callbacks", async () => {
+test("Return credits snapshot exactly once even after package change and repeated callbacks", async () => {
     const f = fixture(); await f.start();
     f.pkg.price = 99000; f.pkg.diamondAmount = 999;
     f.payments.rows[0]!.expiresAt = new Date(0);
-    const results = await Promise.all([f.service.ipn(f.callback()), f.service.ipn(f.callback())]);
-    assert.deepEqual(results.map(r => r.RspCode).sort(), ["00", "02"]);
-    assert.equal((await f.service.ipn(f.callback())).RspCode, "02");
+    const results = await Promise.all([f.service.returnUrl(f.callback()), f.service.returnUrl(f.callback())]);
+    assert.deepEqual(results.map(r => new URL(r).searchParams.get("returnResult")), ["processed", "processed"]);
+    assert.equal(new URL(await f.service.returnUrl(f.callback())).searchParams.get("returnResult"), "processed");
     assert.equal(f.payments.diamond, 130);
     assert.deepEqual(f.payments.ledger, [{ amount: 120, balanceBefore: 10, balanceAfter: 130 }]);
 });
 test("both VNPay codes must indicate success; failure does not credit or store sentinel ID", async () => {
     const f = fixture(); await f.start();
-    assert.equal((await f.service.ipn(f.callback({ vnp_TransactionStatus: "02", vnp_TransactionNo: "0" }))).RspCode, "00");
+    assert.equal(new URL(await f.service.returnUrl(f.callback({ vnp_TransactionStatus: "02", vnp_TransactionNo: "0" }))).searchParams.get("returnResult"), "processed");
     assert.equal(f.payments.rows[0]!.status, "FAILED");
     assert.equal(f.payments.rows[0]!.providerTransactionId, undefined);
     assert.equal(f.payments.diamond, 10);
 });
-test("repository errors yield retryable IPN 99", async () => {
+test("repository errors redirect safely without confirming payment", async () => {
     const f = fixture(); await f.start();
     f.payments.confirm = async () => { throw new Error("transaction unavailable"); };
-    assert.equal((await f.service.ipn(f.callback())).RspCode, "99");
+    assert.equal(new URL(await f.service.returnUrl(f.callback())).searchParams.get("returnResult"), "error");
     assert.equal(f.payments.rows[0]!.status, "PENDING");
 });
-test("return before IPN is read only; payment API enforces ownership and omits secrets", async () => {
+test("return commits before redirect; payment API enforces ownership and omits secrets", async () => {
     const f = fixture(); const checkout = await f.start();
-    const before = structuredClone(f.payments.rows);
     const url = new URL(await f.service.returnUrl(f.callback()));
     assert.equal(url.searchParams.get("signatureValid"), "true");
     assert.equal(url.searchParams.get("paymentId"), checkout.paymentId);
     assert.equal(url.searchParams.has("vnp_SecureHash"), false);
-    assert.deepEqual(f.payments.rows, before);
-    assert.equal((await f.service.getPayment("c".repeat(24), checkout.paymentId)).status, "PENDING");
+    assert.equal(url.searchParams.get("returnResult"), "processed");
+    assert.equal(f.payments.diamond, 130);
+    assert.deepEqual([...url.searchParams.keys()].sort(), ["paymentId", "returnResult", "signatureValid", "transactionCode"]);
+    assert.equal((await f.service.getPayment("c".repeat(24), checkout.paymentId)).status, "SUCCESS");
     await assert.rejects(() => f.service.getPayment("d".repeat(24), checkout.paymentId), /Không tìm thấy/);
     const invalid = new URL(await f.service.returnUrl({ vnp_TxnRef: "forged" }));
     assert.equal(invalid.searchParams.get("signatureValid"), "false");
     assert.equal(invalid.searchParams.has("transactionCode"), false);
+});
+test("return maps cancellation, expiry and other failures without credit", async () => {
+    for (const [code, status] of [["24", "CANCELLED"], ["11", "EXPIRED"], ["51", "FAILED"]]) {
+        const f = fixture(); await f.start();
+        const url = new URL(await f.service.returnUrl(f.callback({
+            vnp_ResponseCode: code!, vnp_TransactionStatus: "02", vnp_TransactionNo: "0",
+        })));
+        assert.equal(url.searchParams.get("returnResult"), "processed");
+        assert.equal(f.payments.rows[0]!.status, status);
+        assert.equal(f.payments.diamond, 10);
+        assert.equal(f.payments.ledger.length, 0);
+        await f.service.returnUrl(f.callback());
+        assert.equal(f.payments.rows[0]!.status, status);
+        assert.equal(f.payments.diamond, 10);
+    }
+});
+test("terminal success cannot be downgraded by another valid callback", async () => {
+    const f = fixture(); await f.start();
+    await f.service.returnUrl(f.callback());
+    await f.service.returnUrl(f.callback({ vnp_ResponseCode: "24", vnp_TransactionStatus: "02", vnp_TransactionNo: "0" }));
+    assert.equal(f.payments.rows[0]!.status, "SUCCESS");
+    assert.equal(f.payments.diamond, 130);
+    assert.equal(f.payments.ledger.length, 1);
+});
+test("return rejects malformed payload without identifiers or writes", async () => {
+    const f = fixture(); await f.start();
+    const cases: Record<string, string>[] = [
+        { vnp_TxnRef: "bad-ref!" }, { vnp_TransactionStatus: "" },
+        { vnp_Amount: "NaN" }, { vnp_TransactionNo: "abc" },
+    ];
+    for (const overrides of cases) {
+        const url = new URL(await f.service.returnUrl(f.callback(overrides)));
+        assert.equal(url.searchParams.get("returnResult"), "invalid");
+        assert.equal(url.searchParams.get("signatureValid"), "false");
+        assert.equal(url.searchParams.has("paymentId"), false);
+    }
+    assert.equal(f.payments.rows[0]!.status, "PENDING");
+    assert.equal(f.payments.ledger.length, 0);
+});
+test("return configuration supports loopback HTTP only and needs no IPN setting", () => {
+    for (const host of ["localhost", "127.0.0.1", "[::1]"]) {
+        const url = "http://" + host + ":5000/api/v1/payments/vnpay/return";
+        assert.equal(getVnpayConfig({ ...config, VNPAY_EXPIRE_MINUTES: "15", VNPAY_RETURN_URL: url }).VNPAY_RETURN_URL, url);
+    }
+    for (const url of ["http://evil.example/return", "http://localhost.evil.example/return",
+        "https://user:pass@example.test/return", "https://example.test/return?q=1", "https://example.test/return#hash"]) {
+        assert.throws(() => getVnpayConfig({ ...config, VNPAY_EXPIRE_MINUTES: "15", VNPAY_RETURN_URL: url }));
+    }
 });
 test("HTTP routes: callbacks public, checkout protected, /me before /:paymentId and validation", async t => {
     const f = fixture();
@@ -186,12 +233,22 @@ test("HTTP routes: callbacks public, checkout protected, /me before /:paymentId 
     t.after(() => new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections(); }));
     const address = server.address(); assert.ok(address && typeof address !== "string");
     const base = `http://127.0.0.1:${address.port}/payments`;
-    const ipn = await fetch(`${base}/vnpay/ipn`); assert.equal(ipn.status, 200); assert.equal((await ipn.json()).RspCode, "97");
+    assert.equal((await fetch(`${base}/vnpay/ipn`)).status, 404);
     assert.equal((await fetch(`${base}/vnpay/return`, { redirect: "manual" })).status, 302);
     assert.equal((await fetch(`${base}/vnpay/checkout`, { method: "POST" })).status, 401);
     const headers = { Authorization: "Bearer test", "Content-Type": "application/json" };
     assert.equal((await fetch(`${base}/vnpay/checkout`, { method: "POST", headers, body: JSON.stringify({ packageId: f.pkg.id, amount: 1 }) })).status, 400);
     assert.equal((await fetch(`${base}/vnpay/checkout`, { method: "POST", headers, body: JSON.stringify({ packageId: f.pkg.id }) })).status, 201);
+    const callbackUrl = `${base}/vnpay/return?${new URLSearchParams(f.callback())}`;
+    const returned = await fetch(callbackUrl, { redirect: "manual" });
+    assert.equal(returned.status, 302);
+    assert.equal(new URL(returned.headers.get("location")!).searchParams.get("returnResult"), "processed");
+    assert.equal(f.payments.rows[0]!.status, "SUCCESS");
+    assert.equal(f.payments.diamond, 130);
+    await fetch(callbackUrl, { redirect: "manual" });
+    assert.equal(f.payments.diamond, 130);
+    assert.equal((await fetch(`${base}/me`)).status, 401);
+    assert.equal((await fetch(`${base}/${f.payments.rows[0]!.id}`)).status, 401);
     const history = await fetch(`${base}/me`, { headers }); assert.equal(history.status, 200); assert.equal((await history.json()).data.total, 1);
     assert.equal((await fetch(`${base}/me?limit=-1`, { headers })).status, 400);
     assert.equal((await fetch(`${base}/bad-id`, { headers })).status, 400);

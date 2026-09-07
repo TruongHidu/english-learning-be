@@ -6,9 +6,7 @@ import { parseVnpayDate } from "../payments/vnpay.gateway.js";
 import type { IPaymentTransactionRepository } from "../repositories/interfaces/payment-transaction.repository.interface.js";
 import type { IDiamondPackageRepository } from "../repositories/interfaces/diamond-package.repository.interface.js";
 import type { IUserRepository } from "../repositories/interfaces/user.repository.interface.js";
-import type { IpnResponse, Payment } from "../types/payment.types.js";
-
-const response = (RspCode: IpnResponse["RspCode"], Message: string): IpnResponse => ({ RspCode, Message });
+import type { Payment } from "../types/payment.types.js";
 
 export function publicPayment(payment: Payment) {
     return {
@@ -58,40 +56,50 @@ export class PaymentService {
         };
     }
 
-    async ipn(query: Record<string, unknown>): Promise<IpnResponse> {
+    async returnUrl(query: Record<string, unknown>): Promise<string> {
+        const config = this.config();
+        const url = new URL(config.PAYMENT_FRONTEND_RESULT_URL);
+        const redirect = (result: "processed" | "invalid" | "not_found" | "error") => {
+            url.searchParams.set("signatureValid", String(result !== "invalid"));
+            url.searchParams.set("returnResult", result);
+            return url.toString();
+        };
         try {
             const params = this.gateway.verifyCallback(query);
-            if (!params) return response("97", "Invalid signature");
-            if (params.vnp_TmnCode !== this.config().VNPAY_TMN_CODE) return response("99", "Invalid merchant");
+            if (!params) return redirect("invalid");
+            if (params.vnp_TmnCode !== config.VNPAY_TMN_CODE) return redirect("invalid");
             const code = params.vnp_TxnRef;
-            if (!code || !/^[a-zA-Z0-9]{1,100}$/.test(code)) return response("99", "Invalid reference");
+            if (!code || !/^[a-zA-Z0-9]{1,100}$/.test(code)) return redirect("invalid");
             const payment = await this.payments.findByCode(code);
-            if (!payment) return response("01", "Order not found");
+            if (!payment) return redirect("not_found");
             if (!params.vnp_Amount || !/^\d{1,12}$/.test(params.vnp_Amount) || Number(params.vnp_Amount) !== payment.amount * 100) {
-                return response("04", "Invalid amount");
+                return redirect("invalid");
             }
-            if (payment.status !== "PENDING") return response("02", "Order already confirmed");
             const responseCode = params.vnp_ResponseCode;
             const transactionStatus = params.vnp_TransactionStatus;
             if (!responseCode || !/^\d{2}$/.test(responseCode) || !transactionStatus || !/^\d{2}$/.test(transactionStatus)) {
-                return response("99", "Invalid payment result");
+                return redirect("invalid");
             }
             const success = responseCode === "00" && transactionStatus === "00";
             const hasPayDate = params.vnp_PayDate !== undefined;
             const paidAt = hasPayDate ? parseVnpayDate(params.vnp_PayDate!) : null;
             // VNPay documents vnp_PayDate as optional. Reject it only when it is
-            // present but malformed; a missing value must not block a valid IPN.
-            if (hasPayDate && !paidAt) return response("99", "Invalid pay date");
+            // present but malformed; a missing value must not block a valid return.
+            if (hasPayDate && !paidAt) return redirect("invalid");
             const validProviderTransactionId = Boolean(
                 params.vnp_TransactionNo && /^(?!0+$)\d{1,15}$/.test(params.vnp_TransactionNo),
             );
             if (success && !validProviderTransactionId) {
-                return response("99", "Invalid successful transaction");
+                return redirect("invalid");
             }
-            // Do not reject delayed IPN based on local expiry or reread the package.
+            url.searchParams.set("paymentId", payment.id);
+            url.searchParams.set("transactionCode", payment.transactionCode);
+            if (payment.status !== "PENDING") return redirect("processed");
+            // Do not reject delayed returns based on local expiry or reread the package.
             // Failed VNPay callbacks can use TransactionNo=0: never store that as a unique provider ID.
-            const result = await this.payments.confirm(payment, {
-                status: success ? "SUCCESS" : "FAILED", responseCode, transactionStatus,
+            await this.payments.confirm(payment, {
+                status: success ? "SUCCESS" : responseCode === "24" ? "CANCELLED" : responseCode === "11" ? "EXPIRED" : "FAILED",
+                responseCode, transactionStatus,
                 bankCode: params.vnp_BankCode, cardType: params.vnp_CardType,
                 payDate: paidAt ? params.vnp_PayDate : undefined,
                 ...(success ? {
@@ -99,25 +107,12 @@ export class PaymentService {
                     ...(paidAt ? { paidAt } : {}),
                 } : {}),
             });
-            return result === "CONFIRMED" ? response("00", "Confirm Success") : response("02", "Order already confirmed");
+            return redirect("processed");
         } catch {
-            // Let VNPay retry; do not expose raw callback data, credentials or database errors.
-            return response("99", "Unable to confirm payment");
+            // The browser can return to the signed backend URL to retry a rolled-back write.
+            // Never expose raw callback data, credentials or database errors.
+            return redirect("error");
         }
-    }
-
-    async returnUrl(query: Record<string, unknown>): Promise<string> {
-        const config = this.config();
-        const params = this.gateway.verifyCallback(query);
-        const valid = Boolean(params && params.vnp_TmnCode === config.VNPAY_TMN_CODE);
-        const url = new URL(config.PAYMENT_FRONTEND_RESULT_URL);
-        url.searchParams.set("signatureValid", String(valid));
-        if (valid && params?.vnp_TxnRef && /^[a-zA-Z0-9]{1,100}$/.test(params.vnp_TxnRef)) {
-            url.searchParams.set("transactionCode", params.vnp_TxnRef);
-            const payment = await this.payments.findByCode(params.vnp_TxnRef);
-            if (payment) url.searchParams.set("paymentId", payment.id);
-        }
-        return url.toString();
     }
 
     async getPayment(userId: string, paymentId: string) {

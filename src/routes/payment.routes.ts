@@ -6,11 +6,10 @@ import { paymentCheckoutSchema, paymentHistorySchema, paymentIdSchema } from "..
 
 export function createPaymentRouter(controller: PaymentController, authenticate: RequestHandler) {
     const router = Router();
-    router.get("/vnpay/ipn", controller.ipn);
     router.get("/vnpay/return", controller.returnUrl);
-    router.use(authenticate, authorize("USER"));
-    router.post("/vnpay/checkout", validate(paymentCheckoutSchema), controller.checkout);
-    router.get("/me", validateQuery(paymentHistorySchema), controller.history);
-    router.get("/:paymentId", validateParams(paymentIdSchema), controller.getPayment);
+    const userOnly = [authenticate, authorize("USER")];
+    router.post("/vnpay/checkout", ...userOnly, validate(paymentCheckoutSchema), controller.checkout);
+    router.get("/me", ...userOnly, validateQuery(paymentHistorySchema), controller.history);
+    router.get("/:paymentId", ...userOnly, validateParams(paymentIdSchema), controller.getPayment);
     return router;
 }

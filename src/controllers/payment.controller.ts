@@ -11,34 +11,6 @@ export class PaymentController {
             res.status(201).json({ success: true, message: "Tạo thanh toán thành công", data });
         } catch (error) { next(error); }
     };
-    ipn: RequestHandler = async (req, res) => {
-        const transactionCode = typeof req.query.vnp_TxnRef === "string" &&
-            /^[a-zA-Z0-9]{1,100}$/.test(req.query.vnp_TxnRef)
-            ? req.query.vnp_TxnRef
-            : null;
-        try {
-            const result = await this.service.ipn(req.query);
-            // Log only the merchant reference and our response. Never log the
-            // callback query because it contains the signed payment payload.
-            if (transactionCode) {
-                console.info("[VNPAY_IPN]", {
-                    transactionCode,
-                    rspCode: result.RspCode,
-                    message: result.Message,
-                });
-            }
-            res.status(200).json(result);
-        } catch {
-            if (transactionCode) {
-                console.error("[VNPAY_IPN]", {
-                    transactionCode,
-                    rspCode: "99",
-                    message: "Unable to confirm payment",
-                });
-            }
-            res.status(200).json({ RspCode: "99", Message: "Unable to confirm payment" });
-        }
-    };
     returnUrl: RequestHandler = async (req, res, next) => {
         try { res.redirect(await this.service.returnUrl(req.query)); }
         catch (error) { next(error); }
