@@ -40,6 +40,10 @@ const diamondTransactionSchema = new Schema<DiamondTransactionPersistence>(
 );
 
 diamondTransactionSchema.index({ userId: 1, createdAt: -1 });
+diamondTransactionSchema.index({ referenceId: 1 }, {
+    unique: true,
+    partialFilterExpression: { type: "TOP_UP", referenceType: "PAYMENT", referenceId: { $type: "string" } },
+});
 
 export const DiamondTransactionModel = model<DiamondTransactionPersistence>(
     "DiamondTransaction",

@@ -59,6 +59,11 @@ import { AdminDiamondPackageController } from "../controllers/admin-diamond-pack
 import { realtimeService } from "../services/realtime.service.js";
 import { ShopService } from "../services/shop.service.js";
 import { ShopController } from "../controllers/shop.controller.js";
+import { PaymentTransactionRepository } from "../repositories/implementations/payment-transaction.repository.js";
+import { VnpayGateway } from "../payments/vnpay.gateway.js";
+import { getVnpayConfig } from "./vnpay.config.js";
+import { PaymentService } from "../services/payment.service.js";
+import { PaymentController } from "../controllers/payment.controller.js";
 
 const userRepository = new UserRepository();
 const courseRepository = new CourseRepository();
@@ -73,6 +78,10 @@ const learningSessionRepository = new LearningSessionRepository();
 const userVocabularyRepository = new UserVocabularyRepository();
 const diamondTransactionRepository = new DiamondTransactionRepository();
 const diamondPackageRepository = new DiamondPackageRepository();
+const paymentRepository = new PaymentTransactionRepository();
+const paymentGateway = new VnpayGateway(getVnpayConfig);
+const paymentService = new PaymentService(paymentRepository, diamondPackageRepository, userRepository, paymentGateway, getVnpayConfig);
+export const paymentController = new PaymentController(paymentService);
 const aiGenerationRepository = new AIGenerationRepository();
 const aiVocabularyCommitRepository = new AiVocabularyCommitRepository();
 const aiQuestionCommitRepository = new AiQuestionCommitRepository();

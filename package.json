@@ -7,6 +7,7 @@
     "build": "tsc",
     "test": "tsc -p tsconfig.test.json && node --test .test-dist/tests/*.test.js",
     "test:streak:integration": "tsc -p tsconfig.test.json && node --test .test-dist/tests/user-stats.mongo.integration.js",
+    "test:payment:integration": "tsc -p tsconfig.test.json && node --test .test-dist/tests/payment.mongo.integration.js",
     "start": "node dist/server.js"
   },
   "repository": {

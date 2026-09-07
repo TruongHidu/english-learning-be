@@ -2,6 +2,14 @@
 
 Backend API cho ứng dụng học tiếng Anh, sử dụng Express, TypeScript và MongoDB.
 
+## Thanh toán kim cương bằng VNPay Sandbox
+
+Hướng dẫn cấu hình, API contract, Cloudflare Tunnel và kiểm thử: [docs/vnpay.md](docs/vnpay.md).
+
+Checkout lưu giá và số kim cương tại thời điểm mua. IPN xác minh VNPay rồi cập nhật payment,
+số dư và lịch sử TOP_UP trong cùng MongoDB transaction. Return URL chỉ chuyển người dùng
+về frontend; frontend phải đọc trạng thái chính thức từ API. Chức năng yêu cầu replica set.
+
 ## Yêu cầu môi trường
 
 - Node.js 20+

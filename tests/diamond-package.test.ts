@@ -96,9 +96,7 @@ class InMemoryDiamondPackageRepository implements IDiamondPackageRepository {
     }
 
     async delete(id: string): Promise<boolean> {
-        const initialLength = this.packages.length;
-        this.packages = this.packages.filter((p) => p.id !== id);
-        return this.packages.length < initialLength;
+        return Boolean(await this.update(id, { status: "INACTIVE" }));
     }
 }
 
@@ -299,7 +297,7 @@ test("Admin changes package status from ACTIVE to INACTIVE", async () => {
     });
 });
 
-test("Admin deletes package successfully", async () => {
+test("Admin deletes package by deactivating it and preserving history", async () => {
     const repo = new InMemoryDiamondPackageRepository();
     const mockRealtime = new MockRealtimeService();
     const service = new AdminDiamondPackageService(repo, mockRealtime);
@@ -312,7 +310,9 @@ test("Admin deletes package successfully", async () => {
 
     await service.deletePackage(created.id);
     const remaining = await service.getPackages();
-    assert.equal(remaining.length, 0);
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0]!.status, "INACTIVE");
+    assert.equal((await repo.findActive()).length, 0);
 
     assert.equal(mockRealtime.events.length, 2);
     assert.deepEqual(mockRealtime.events[1], {
@@ -322,7 +322,7 @@ test("Admin deletes package successfully", async () => {
     });
 
     await assert.rejects(
-        () => service.deletePackage(created.id),
+        () => service.deletePackage("missing"),
         (err: unknown) => err instanceof AppError && err.code === "DIAMOND_PACKAGE_NOT_FOUND",
     );
 });

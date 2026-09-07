@@ -95,7 +95,9 @@ export class DiamondPackageRepository implements IDiamondPackageRepository {
 
     async delete(id: string): Promise<boolean> {
         if (!Types.ObjectId.isValid(id)) return false;
-        const result = await DiamondPackageModel.findByIdAndDelete(id).exec();
+        const result = await DiamondPackageModel.findByIdAndUpdate(
+            id, { $set: { status: "INACTIVE" } }, { runValidators: true },
+        ).exec();
         return Boolean(result);
     }
 }

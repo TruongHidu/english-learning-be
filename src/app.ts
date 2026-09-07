@@ -19,6 +19,8 @@ import learningPathRouter from "./routes/learning-path.routes.js";
 import sessionRouter from "./routes/session.routes.js";
 import userVocabularyRouter from "./routes/user-vocabulary.routes.js";
 import shopRouter from "./routes/shop.routes.js";
+import { createPaymentRouter } from "./routes/payment.routes.js";
+import { authenticate, paymentController } from "./config/container.js";
 
 const app = express();
 
@@ -46,6 +48,7 @@ app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/user", userVocabularyRouter);
 app.use("/api/v1/shop", shopRouter);
+app.use("/api/v1/payments", createPaymentRouter(paymentController, authenticate));
 app.use("/api/v1/courses", courseRouter);
 app.use("/api/v1/lessons", learningRouter);
 app.use("/api/v1/sessions", sessionRouter);
