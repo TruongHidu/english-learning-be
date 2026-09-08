@@ -20,7 +20,13 @@ export interface ConnectedEvent {
     message: string;
 }
 
-export type RealtimeEvent = DiamondUpdatedEvent | DiamondPackageUpdatedEvent | ConnectedEvent;
+export interface AccountStatusChangedEvent {
+    type: "ACCOUNT_STATUS_CHANGED";
+    status: string;
+    reason?: string;
+}
+
+export type RealtimeEvent = DiamondUpdatedEvent | DiamondPackageUpdatedEvent | ConnectedEvent | AccountStatusChangedEvent;
 
 export class RealtimeService {
     private readonly clients = new Map<string, Set<Response>>();
