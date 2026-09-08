@@ -235,3 +235,12 @@ export const adminDiamondController = new AdminDiamondController(adminDiamondSer
 
 const adminDiamondPackageService = new AdminDiamondPackageService(diamondPackageRepository, realtimeService);
 export const adminDiamondPackageController = new AdminDiamondPackageController(adminDiamondPackageService);
+
+import { AdminRevenueRepository } from "../repositories/implementations/admin-revenue.repository.js";
+import { AdminRevenueService } from "../services/admin-revenue.service.js";
+import { AdminRevenueController } from "../controllers/admin-revenue.controller.js";
+
+const adminRevenueRepository = new AdminRevenueRepository();
+export const adminRevenueService = new AdminRevenueService(adminRevenueRepository);
+export const adminRevenueController = new AdminRevenueController(adminRevenueService);
+
