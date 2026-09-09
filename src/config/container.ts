@@ -244,3 +244,12 @@ const adminRevenueRepository = new AdminRevenueRepository();
 export const adminRevenueService = new AdminRevenueService(adminRevenueRepository);
 export const adminRevenueController = new AdminRevenueController(adminRevenueService);
 
+import { AdminLearningStatsRepository } from "../repositories/implementations/admin-learning-stats.repository.js";
+import { AdminLearningStatsService } from "../services/admin-learning-stats.service.js";
+import { AdminLearningStatsController } from "../controllers/admin-learning-stats.controller.js";
+
+const adminLearningStatsRepository = new AdminLearningStatsRepository();
+export const adminLearningStatsService = new AdminLearningStatsService(adminLearningStatsRepository);
+export const adminLearningStatsController = new AdminLearningStatsController(adminLearningStatsService);
+
+

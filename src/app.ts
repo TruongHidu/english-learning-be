@@ -22,7 +22,13 @@ import userVocabularyRouter from "./routes/user-vocabulary.routes.js";
 import shopRouter from "./routes/shop.routes.js";
 import { createPaymentRouter } from "./routes/payment.routes.js";
 import { createAdminRevenueRouter } from "./routes/admin-revenue.routes.js";
-import { authenticate, paymentController, adminRevenueController } from "./config/container.js";
+import { createAdminLearningStatsRouter } from "./routes/admin-learning-stats.routes.js";
+import {
+    authenticate,
+    paymentController,
+    adminRevenueController,
+    adminLearningStatsController,
+} from "./config/container.js";
 
 const app = express();
 
@@ -66,9 +72,10 @@ app.use("/api/v1/admin/ai", adminAiRouter);
 app.use("/api/v1/admin", adminDiamondRouter);
 app.use("/api/v1/admin/diamond-packages", adminDiamondPackageRouter);
 app.use("/api/v1/admin/revenue", createAdminRevenueRouter(adminRevenueController, authenticate));
+app.use("/api/v1/admin/learning-stats", createAdminLearningStatsRouter(adminLearningStatsController, authenticate));
+app.use("/api/admin/learning-stats", createAdminLearningStatsRouter(adminLearningStatsController, authenticate));
 
 
 app.use(errorHandler);
 
 export default app;
-

@@ -33,6 +33,7 @@ export class LearningSessionRepository implements ILearningSessionRepository {
             totalQuestions: data.totalQuestions,
             questionIds: data.questionIds,
             answeredQuestionIds: [],
+            wrongQuestionIds: [],
             questionSnapshots: data.questionSnapshots,
             correctCount: 0,
             wrongCount: 0,
@@ -60,6 +61,14 @@ export class LearningSessionRepository implements ILearningSessionRepository {
                             [questionId],
                         ],
                     },
+                    wrongQuestionIds: data.isCorrect
+                        ? { $ifNull: ["$wrongQuestionIds", []] }
+                        : {
+                            $setUnion: [
+                                { $ifNull: ["$wrongQuestionIds", []] },
+                                [questionId],
+                            ],
+                        },
                     correctCount: {
                         $add: [{ $ifNull: ["$correctCount", 0] }, correctIncrement],
                     },

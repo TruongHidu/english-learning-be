@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "seed": "tsx src/seed.ts",
     "check:payment-pending": "tsx src/scripts/migrate-payment-pending.ts",
     "migrate:payment-pending": "tsx src/scripts/migrate-payment-pending.ts --apply",
     "build": "tsc",

@@ -45,6 +45,7 @@ export interface LearningSessionPersistence {
     totalQuestions: number;
     questionIds: Types.ObjectId[];
     answeredQuestionIds: Types.ObjectId[];
+    wrongQuestionIds: Types.ObjectId[];
     questionSnapshots: LearningQuestionSnapshot[];
     correctCount: number;
     wrongCount: number;
@@ -80,6 +81,11 @@ const learningSessionSchema = new Schema<LearningSessionPersistence>(
             default: [],
         },
         answeredQuestionIds: {
+            type: [{ type: Schema.Types.ObjectId, ref: "Question" }],
+            required: true,
+            default: [],
+        },
+        wrongQuestionIds: {
             type: [{ type: Schema.Types.ObjectId, ref: "Question" }],
             required: true,
             default: [],
@@ -156,6 +162,9 @@ const learningSessionSchema = new Schema<LearningSessionPersistence>(
 
 learningSessionSchema.index({ userId: 1, lessonId: 1, status: 1 });
 learningSessionSchema.index({ userId: 1, startedAt: -1 });
+learningSessionSchema.index({ lessonId: 1, status: 1 });
+learningSessionSchema.index({ answeredQuestionIds: 1 });
+learningSessionSchema.index({ wrongQuestionIds: 1 });
 
 export const LearningSessionModel = model<LearningSessionPersistence>(
     "LearningSession",
