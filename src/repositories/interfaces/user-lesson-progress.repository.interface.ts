@@ -7,6 +7,7 @@ export interface CompleteLessonData {
     correctCount: number;
     wrongCount: number;
     completedAt: Date;
+    completedVersion: number;
 }
 
 export interface FailedLessonAttemptData {

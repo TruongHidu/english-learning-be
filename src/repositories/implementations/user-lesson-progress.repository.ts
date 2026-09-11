@@ -22,33 +22,18 @@ export class UserLessonProgressRepository implements IUserLessonProgressReposito
             userId,
             lessonId,
             status,
+            ...(status !== "LOCKED" && { accessGrantedAt: new Date() }),
             ...(status === "UNLOCKED" && { unlockedAt: new Date() }),
         });
     }
 
     async upsertInProgress(userId: string, lessonId: string): Promise<void> {
-        const existing = await UserLessonProgressModel.findOne({ userId, lessonId }).exec();
-
-        if (!existing) {
-            // New record: create as IN_PROGRESS
-            await UserLessonProgressModel.create({
-                userId,
-                lessonId,
-                status: "IN_PROGRESS",
-                bestScore: 0,
-                totalAttempts: 0,
-                correctCount: 0,
-                wrongCount: 0,
-                unlockedAt: new Date(),
-            });
-        } else if (existing.status !== "COMPLETED") {
-            // Never downgrade a COMPLETED lesson back to IN_PROGRESS
-            await UserLessonProgressModel.updateOne(
-                { userId, lessonId },
-                { $set: { status: "IN_PROGRESS" } },
-            ).exec();
-        }
-        // If already COMPLETED — do nothing
+        await UserLessonProgressModel.updateOne({ userId, lessonId }, {
+            $setOnInsert: { status: "IN_PROGRESS", accessGrantedAt: new Date(), unlockedAt: new Date() },
+        }, { upsert: true });
+        await UserLessonProgressModel.updateOne({ userId, lessonId, status: { $ne: "COMPLETED" }, firstCompletedAt: { $exists: false } }, {
+            $set: { status: "IN_PROGRESS" },
+        });
     }
 
     async updateStatus(userId: string, lessonId: string, status: UserLessonProgressStatus): Promise<UserLessonProgressDocument | null> {
@@ -65,7 +50,7 @@ export class UserLessonProgressRepository implements IUserLessonProgressReposito
         data: FailedLessonAttemptData,
     ): Promise<UserLessonProgressDocument | null> {
         const existing = await this.findByUserIdAndLessonId(userId, lessonId);
-        const status = existing?.status === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS";
+        const status = existing?.status === "COMPLETED" || existing?.firstCompletedAt ? "COMPLETED" : "IN_PROGRESS";
 
         const update: {
             $set: Record<string, unknown>;
@@ -77,13 +62,10 @@ export class UserLessonProgressRepository implements IUserLessonProgressReposito
                 totalAttempts: data.totalAttempts,
                 correctCount: data.correctCount,
                 wrongCount: data.wrongCount,
+                accessGrantedAt: existing?.accessGrantedAt ?? existing?.unlockedAt ?? new Date(),
                 ...(status === "IN_PROGRESS" && { unlockedAt: existing?.unlockedAt ?? new Date() }),
             },
         };
-
-        if (status === "IN_PROGRESS") {
-            update.$unset = { completedAt: 1 };
-        }
 
         return UserLessonProgressModel.findOneAndUpdate(
             { userId, lessonId },
@@ -97,6 +79,7 @@ export class UserLessonProgressRepository implements IUserLessonProgressReposito
         lessonId: string,
         data: CompleteLessonData,
     ): Promise<UserLessonProgressDocument | null> {
+        const existing = await this.findByUserIdAndLessonId(userId, lessonId);
         return UserLessonProgressModel.findOneAndUpdate(
             { userId, lessonId },
             {
@@ -106,8 +89,11 @@ export class UserLessonProgressRepository implements IUserLessonProgressReposito
                     totalAttempts: data.totalAttempts,
                     correctCount: data.correctCount,
                     wrongCount: data.wrongCount,
-                    completedAt: data.completedAt,
+                    completedAt: existing?.completedAt ?? data.completedAt,
+                    firstCompletedAt: existing?.firstCompletedAt ?? existing?.completedAt ?? data.completedAt,
+                    accessGrantedAt: existing?.accessGrantedAt ?? existing?.unlockedAt ?? data.completedAt,
                 },
+                $max: { completedVersion: data.completedVersion, lastCompletedAt: data.completedAt },
             },
             { returnDocument: "after", runValidators: true, upsert: true },
         ).exec();

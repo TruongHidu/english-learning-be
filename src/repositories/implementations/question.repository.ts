@@ -1,3 +1,4 @@
+import { changeLessonContent, lessonsUsingQuestions } from "../../services/lesson-content.service.js";
 import { Types } from "mongoose";
 
 import {
@@ -153,124 +154,130 @@ export class QuestionRepository implements IQuestionRepository {
         id: string,
         data: UpdateQuestionData,
     ): Promise<QuestionDocument | null> {
-        const existing = await QuestionModel.findById(id)
-            .select("+normalizedContent +dedupeKey")
-            .exec();
-        if (!existing) return null;
+        return changeLessonContent(() => lessonsUsingQuestions([id]), async () => {
+            const existing = await QuestionModel.findById(id)
+                .select("+normalizedContent +dedupeKey")
+                .exec();
+            if (!existing) return null;
 
-        const updatePayload: Partial<QuestionPersistence> = {};
-        const unsetPayload: Record<string, 1> = {};
+            const updatePayload: Partial<QuestionPersistence> = {};
+            const unsetPayload: Record<string, 1> = {};
 
-        if (data.vocabularyIds !== undefined) {
-            updatePayload.vocabularyIds = data.vocabularyIds
-                ? data.vocabularyIds.map((vId) => new Types.ObjectId(vId))
-                : undefined;
-            if (data.vocabularyIds && data.vocabularyIds.length > 0) {
-                updatePayload.vocabularyId = new Types.ObjectId(data.vocabularyIds[0]);
+            if (data.vocabularyIds !== undefined) {
+                updatePayload.vocabularyIds = data.vocabularyIds
+                    ? data.vocabularyIds.map((vId) => new Types.ObjectId(vId))
+                    : undefined;
+                if (data.vocabularyIds && data.vocabularyIds.length > 0) {
+                    updatePayload.vocabularyId = new Types.ObjectId(data.vocabularyIds[0]);
+                }
             }
-        }
-        if (data.vocabularyId !== undefined) {
-            updatePayload.vocabularyId = data.vocabularyId ? new Types.ObjectId(data.vocabularyId) : undefined;
-        }
+            if (data.vocabularyId !== undefined) {
+                updatePayload.vocabularyId = data.vocabularyId ? new Types.ObjectId(data.vocabularyId) : undefined;
+            }
 
-        if (data.type !== undefined) updatePayload.type = data.type;
-        if (data.content !== undefined) updatePayload.content = data.content.trim();
-        if (data.instruction !== undefined) updatePayload.instruction = data.instruction?.trim() || undefined;
-        if (data.correctAnswer !== undefined) updatePayload.correctAnswer = data.correctAnswer;
-        if (data.explanation !== undefined) updatePayload.explanation = data.explanation?.trim() || undefined;
-        if (data.difficulty !== undefined) updatePayload.difficulty = data.difficulty;
-        if (data.audioUrl !== undefined) {
-            const audioUrl = data.audioUrl?.trim();
-            if (audioUrl) updatePayload.audioUrl = audioUrl;
-            else unsetPayload.audioUrl = 1;
-        }
-        if (data.audioPublicId !== undefined) {
-            const audioPublicId = data.audioPublicId?.trim();
-            if (audioPublicId) updatePayload.audioPublicId = audioPublicId;
-            else unsetPayload.audioPublicId = 1;
-        }
-        if (data.imageUrl !== undefined) {
-            const imageUrl = data.imageUrl?.trim();
-            if (imageUrl) updatePayload.imageUrl = imageUrl;
-            else unsetPayload.imageUrl = 1;
-        }
-        if (data.imagePublicId !== undefined) {
-            const imagePublicId = data.imagePublicId?.trim();
-            if (imagePublicId) updatePayload.imagePublicId = imagePublicId;
-            else unsetPayload.imagePublicId = 1;
-        }
+            if (data.type !== undefined) updatePayload.type = data.type;
+            if (data.content !== undefined) updatePayload.content = data.content.trim();
+            if (data.instruction !== undefined) updatePayload.instruction = data.instruction?.trim() || undefined;
+            if (data.correctAnswer !== undefined) updatePayload.correctAnswer = data.correctAnswer;
+            if (data.explanation !== undefined) updatePayload.explanation = data.explanation?.trim() || undefined;
+            if (data.difficulty !== undefined) updatePayload.difficulty = data.difficulty;
+            if (data.audioUrl !== undefined) {
+                const audioUrl = data.audioUrl?.trim();
+                if (audioUrl) updatePayload.audioUrl = audioUrl;
+                else unsetPayload.audioUrl = 1;
+            }
+            if (data.audioPublicId !== undefined) {
+                const audioPublicId = data.audioPublicId?.trim();
+                if (audioPublicId) updatePayload.audioPublicId = audioPublicId;
+                else unsetPayload.audioPublicId = 1;
+            }
+            if (data.imageUrl !== undefined) {
+                const imageUrl = data.imageUrl?.trim();
+                if (imageUrl) updatePayload.imageUrl = imageUrl;
+                else unsetPayload.imageUrl = 1;
+            }
+            if (data.imagePublicId !== undefined) {
+                const imagePublicId = data.imagePublicId?.trim();
+                if (imagePublicId) updatePayload.imagePublicId = imagePublicId;
+                else unsetPayload.imagePublicId = 1;
+            }
 
-        if (data.options !== undefined) {
-            updatePayload.options = data.options
-                ? data.options.map((opt) => ({
-                      content: opt.content.trim(),
-                      imageUrl: opt.imageUrl?.trim() || undefined,
-                      isCorrect: opt.isCorrect,
-                      orderIndex: opt.orderIndex,
-                  }))
-                : undefined;
-        }
+            if (data.options !== undefined) {
+                updatePayload.options = data.options
+                    ? data.options.map((opt) => ({
+                          content: opt.content.trim(),
+                          imageUrl: opt.imageUrl?.trim() || undefined,
+                          isCorrect: opt.isCorrect,
+                          orderIndex: opt.orderIndex,
+                      }))
+                    : undefined;
+            }
 
-        if (data.matchingPairs !== undefined) {
-            updatePayload.matchingPairs = data.matchingPairs
-                ? data.matchingPairs.map((pair) => ({
-                      vocabularyId: pair.vocabularyId ? new Types.ObjectId(pair.vocabularyId) : undefined,
-                      leftValue: pair.leftValue.trim(),
-                      rightValue: pair.rightValue.trim(),
-                      orderIndex: pair.orderIndex,
-                  }))
-                : undefined;
-        }
+            if (data.matchingPairs !== undefined) {
+                updatePayload.matchingPairs = data.matchingPairs
+                    ? data.matchingPairs.map((pair) => ({
+                          vocabularyId: pair.vocabularyId ? new Types.ObjectId(pair.vocabularyId) : undefined,
+                          leftValue: pair.leftValue.trim(),
+                          rightValue: pair.rightValue.trim(),
+                          orderIndex: pair.orderIndex,
+                      }))
+                    : undefined;
+            }
 
-        const resultingTopicId = data.topicId
-            ? new Types.ObjectId(data.topicId)
-            : existing.topicId;
-        const resultingType = data.type ?? existing.type;
-        const resultingContent = data.content ?? existing.content;
-        if (resultingTopicId) {
-            updatePayload.topicId = resultingTopicId;
-            updatePayload.normalizedContent = normalizeQuestionContent(resultingContent);
-            updatePayload.dedupeKey = data.dedupeKey?.trim()
-                || buildQuestionDedupeKey(
-                    resultingTopicId.toString(),
-                    resultingType,
-                    resultingContent,
-                );
-        }
+            const resultingTopicId = data.topicId
+                ? new Types.ObjectId(data.topicId)
+                : existing.topicId;
+            const resultingType = data.type ?? existing.type;
+            const resultingContent = data.content ?? existing.content;
+            if (resultingTopicId) {
+                updatePayload.topicId = resultingTopicId;
+                updatePayload.normalizedContent = normalizeQuestionContent(resultingContent);
+                updatePayload.dedupeKey = data.dedupeKey?.trim()
+                    || buildQuestionDedupeKey(
+                        resultingTopicId.toString(),
+                        resultingType,
+                        resultingContent,
+                    );
+            }
 
-        const updateOperation: {
-            $set: Partial<QuestionPersistence>;
-            $unset?: Record<string, 1>;
-        } = { $set: updatePayload };
+            const updateOperation: {
+                $set: Partial<QuestionPersistence>;
+                $unset?: Record<string, 1>;
+            } = { $set: updatePayload };
 
-        if (Object.keys(unsetPayload).length > 0) {
-            updateOperation.$unset = unsetPayload;
-        }
+            if (Object.keys(unsetPayload).length > 0) {
+                updateOperation.$unset = unsetPayload;
+            }
 
-        return QuestionModel.findByIdAndUpdate(
-            id,
-            updateOperation,
-            { returnDocument: "after", runValidators: true },
-        )
-            .select("+audioPublicId +imagePublicId")
-            .populate("vocabularyIds vocabularyId", "word meaning")
-            .exec();
+            return QuestionModel.findByIdAndUpdate(
+                id,
+                updateOperation,
+                { returnDocument: "after", runValidators: true },
+            )
+                .select("+audioPublicId +imagePublicId")
+                .populate("vocabularyIds vocabularyId", "word meaning")
+                .exec();
+        });
     }
 
     public async updateStatus(
         id: string,
         status: QuestionStatus,
     ): Promise<QuestionDocument | null> {
-        return QuestionModel.findByIdAndUpdate(
-            id,
-            { $set: { status } },
-            { returnDocument: "after", runValidators: true },
-        ).populate("vocabularyIds vocabularyId", "word meaning").exec();
+        return changeLessonContent(() => lessonsUsingQuestions([id]), async () => {
+            return QuestionModel.findByIdAndUpdate(
+                id,
+                { $set: { status } },
+                { returnDocument: "after", runValidators: true },
+            ).populate("vocabularyIds vocabularyId", "word meaning").exec();
+        });
     }
 
     public async deleteById(id: string): Promise<boolean> {
-        const deleted = await QuestionModel.findByIdAndDelete(id).exec();
-        return deleted !== null;
+        return changeLessonContent(() => lessonsUsingQuestions([id]), async () => {
+            const deleted = await QuestionModel.findByIdAndDelete(id).exec();
+            return deleted !== null;
+        });
     }
 
     public async countByVocabularyId(vocabularyId: string): Promise<number> {
@@ -325,13 +332,15 @@ export class QuestionRepository implements IQuestionRepository {
     }
 
     public async bulkUpdateStatus(ids: string[], status: QuestionStatus): Promise<number> {
-        if (ids.length === 0) return 0;
-        const result = await QuestionModel.updateMany(
-            { _id: { $in: ids } },
-            { $set: { status } },
-            { runValidators: true },
-        ).exec();
-        return result.modifiedCount;
+        return changeLessonContent(() => lessonsUsingQuestions(ids), async () => {
+            if (ids.length === 0) return 0;
+            const result = await QuestionModel.updateMany(
+                { _id: { $in: ids } },
+                { $set: { status } },
+                { runValidators: true },
+            ).exec();
+            return result.modifiedCount;
+        });
     }
 }
 

@@ -1,3 +1,4 @@
+import type { ICurriculumMilestoneRepository, Milestone } from "../repositories/interfaces/curriculum-milestone.repository.interface.js";
 import { AppError } from "../errors/app-error.js";
 import type { LessonDocument } from "../models/lesson.model.js";
 import type { TopicDocument } from "../models/topic.model.js";
@@ -15,12 +16,20 @@ import type { Section } from "../types/section.types.js";
 export type LearningLockReason = "SECTION" | "LESSON" | null;
 
 export interface LessonProgressionState {
+    currentVersion: number;
+    completedVersion: number;
+    isNewForUser: boolean;
+    publishedQuestionCount: number;
     lesson: LessonDocument;
     progress: UserLessonProgressDocument | null;
     progressStatus: UserLessonProgressStatus;
     isLocked: boolean;
     lockReason: LearningLockReason;
     isCompleted: boolean;
+    hasAccess: boolean;
+    accessGrantedAt: Date | null;
+    isCurrentVersionCompleted: boolean;
+    hasNewContent: boolean;
 }
 
 export interface TopicProgressionState {
@@ -29,8 +38,13 @@ export interface TopicProgressionState {
     progressStatus: UserLessonProgressStatus;
     isLocked: boolean;
     isCompleted: boolean;
+    hasAccess: boolean;
+    accessGrantedAt: Date | null;
+    isCurrentVersionCompleted: boolean;
+    hasNewContent: boolean;
     completedLessonCount: number;
     totalLessonCount: number;
+    newLessonCount: number;
 }
 
 export interface SectionProgressionState {
@@ -39,8 +53,13 @@ export interface SectionProgressionState {
     progressStatus: UserLessonProgressStatus;
     isLocked: boolean;
     isCompleted: boolean;
+    hasAccess: boolean;
+    accessGrantedAt: Date | null;
+    isCurrentVersionCompleted: boolean;
+    hasNewContent: boolean;
     completedLessonCount: number;
     totalLessonCount: number;
+    newLessonCount: number;
 }
 
 export interface CourseProgressionSnapshot {
@@ -55,6 +74,7 @@ export class LearningProgressionService {
         private readonly topicRepository: ITopicRepository,
         private readonly lessonRepository: ILessonRepository,
         private readonly userLessonProgressRepository: IUserLessonProgressRepository,
+        private readonly milestoneRepository: ICurriculumMilestoneRepository,
     ) {}
 
     async getCourseProgression(
@@ -82,26 +102,59 @@ export class LearningProgressionService {
             progressList.map((progress) => [progress.lessonId.toString(), progress]),
         );
 
+        const milestones = new Map((await this.milestoneRepository.findByUser(userId))
+            .map(m => [`${m.kind}:${m.targetId}`, m]));
+        const now = new Date();
+        const grant = async (kind: Milestone["kind"], targetId: string, completed: boolean, members: string[] = []) => {
+            const key = `${kind}:${targetId}`;
+            const old = milestones.get(key);
+            const milestone: Milestone = {
+                kind, targetId, accessGrantedAt: old?.accessGrantedAt ?? now,
+                ...(old?.firstCompletedAt ? { firstCompletedAt: old.firstCompletedAt, completedLessonIds: old.completedLessonIds }
+                    : completed ? { firstCompletedAt: now, completedLessonIds: members } : {}),
+            };
+            if (!old || (completed && !old.firstCompletedAt)) await this.milestoneRepository.grant(userId, milestone);
+            milestones.set(key, milestone);
+            return milestone;
+        };
         const sectionStates: SectionProgressionState[] = [];
         let allPreviousSectionsCompleted = true;
 
         for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
             const section = sections[sectionIndex]!;
             const sectionTopics = topicsBySectionId.get(section.id) ?? [];
-            const sectionIsLocked = sectionIndex > 0 && !allPreviousSectionsCompleted;
+            const sectionMilestone = milestones.get(`SECTION:${section.id}`);
+            const sectionHasHistory = sectionTopics.some(t => (lessonsByTopicId.get(t._id.toString()) ?? []).some(l => {
+                const progress = progressByLessonId.get(l._id.toString());
+                return (progress && progress.status !== "LOCKED") || milestones.has(`LESSON:${l._id}`);
+            }) || milestones.has(`TOPIC:${t._id}`));
+            const sectionIsLocked = !sectionMilestone && !sectionHasHistory && sectionIndex > 0 && !allPreviousSectionsCompleted;
             const topicStates: TopicProgressionState[] = [];
             let allPreviousLessonsInSectionCompleted = true;
 
             for (const topic of sectionTopics) {
                 const topicLessons = lessonsByTopicId.get(topic._id.toString()) ?? [];
-                const topicStartsUnlocked = !sectionIsLocked && allPreviousLessonsInSectionCompleted;
+                const topicMilestone = milestones.get(`TOPIC:${topic._id}`);
+                const topicStartsUnlocked = Boolean(topicMilestone) || (!sectionIsLocked && allPreviousLessonsInSectionCompleted);
                 const lessonStates: LessonProgressionState[] = [];
 
                 for (const lesson of topicLessons) {
                     const lessonId = lesson._id.toString();
                     const progress = progressByLessonId.get(lessonId) ?? null;
-                    const isCompleted = progress?.status === "COMPLETED";
-                    const canStart = !sectionIsLocked && allPreviousLessonsInSectionCompleted;
+                    const isCompleted = progress?.status === "COMPLETED" || Boolean(progress?.firstCompletedAt);
+                    const currentVersion = lesson.publishedVersion ?? 1;
+                    const completedVersion = progress?.completedVersion ?? (isCompleted ? 1 : 0);
+                    const isCurrentVersionCompleted = completedVersion >= currentVersion;
+                    const isNewForUser = !isCompleted && (
+                        (Boolean(topicMilestone?.firstCompletedAt) && !topicMilestone?.completedLessonIds?.includes(lessonId))
+                        || (Boolean(sectionMilestone?.firstCompletedAt) && !sectionMilestone?.completedLessonIds?.includes(lessonId))
+                    );
+                    const priorGrant = milestones.get(`LESSON:${lessonId}`);
+                    const canStart = Boolean(priorGrant) || isCompleted || Boolean(progress?.accessGrantedAt)
+                        || Boolean(progress && progress.status !== "LOCKED") || Boolean(topicMilestone?.firstCompletedAt)
+                        || (!sectionIsLocked && allPreviousLessonsInSectionCompleted)
+                        || (topicStartsUnlocked && lessonStates.length === 0);
+                    const access = canStart ? await grant("LESSON", lessonId, false) : null;
                     const isLocked = !canStart;
                     const progressStatus = this.resolveLessonStatus(progress, isCompleted, isLocked);
 
@@ -112,52 +165,54 @@ export class LearningProgressionService {
                         isLocked,
                         lockReason: isLocked ? (sectionIsLocked ? "SECTION" : "LESSON") : null,
                         isCompleted,
+                        currentVersion, completedVersion, isCurrentVersionCompleted, isNewForUser,
+                        publishedQuestionCount: lesson.publishedQuestionCount ?? 0,
+                        hasNewContent: isCompleted && !isCurrentVersionCompleted,
+                        hasAccess: canStart, accessGrantedAt: access?.accessGrantedAt ?? null,
                     });
 
                     allPreviousLessonsInSectionCompleted =
                         allPreviousLessonsInSectionCompleted && isCompleted;
                 }
 
-                const completedLessonCount = lessonStates.filter((item) => item.isCompleted).length;
+                const completedLessonCount = lessonStates.filter(item => item.isCurrentVersionCompleted).length;
                 const totalLessonCount = lessonStates.length;
-                const isCompleted = totalLessonCount > 0 && completedLessonCount === totalLessonCount;
-                const isLocked = !topicStartsUnlocked;
-
+                const allEverCompleted = totalLessonCount > 0 && lessonStates.every(item => item.isCompleted);
+                const isCurrentVersionCompleted = totalLessonCount > 0 && completedLessonCount === totalLessonCount;
+                const isCompleted = Boolean(topicMilestone?.firstCompletedAt) || allEverCompleted;
+                const isLocked = !isCompleted && !topicStartsUnlocked && !lessonStates.some(item => !item.isLocked);
+                const access = !isLocked ? await grant("TOPIC", topic._id.toString(), allEverCompleted,
+                    lessonStates.map(item => item.lesson._id.toString())) : null;
                 topicStates.push({
-                    topic,
-                    lessons: lessonStates,
-                    progressStatus: this.resolveContainerStatus(
-                        isLocked,
-                        isCompleted,
-                        lessonStates.some((item) => item.progressStatus === "IN_PROGRESS"),
-                        completedLessonCount,
-                    ),
-                    isLocked,
-                    isCompleted,
-                    completedLessonCount,
-                    totalLessonCount,
+                    topic, lessons: lessonStates,
+                    progressStatus: this.resolveContainerStatus(isLocked, isCompleted,
+                        lessonStates.some(item => item.progressStatus === "IN_PROGRESS"), completedLessonCount),
+                    isLocked, isCompleted, completedLessonCount, totalLessonCount,
+                    hasAccess: !isLocked, accessGrantedAt: access?.accessGrantedAt ?? null,
+                    isCurrentVersionCompleted,
+                    hasNewContent: isCompleted && !isCurrentVersionCompleted,
+                    newLessonCount: lessonStates.filter(item => item.isNewForUser).length,
                 });
+                if (topicMilestone?.firstCompletedAt) allPreviousLessonsInSectionCompleted = true;
             }
 
             const sectionLessonStates = topicStates.flatMap((topic) => topic.lessons);
-            const completedLessonCount = sectionLessonStates.filter((item) => item.isCompleted).length;
+            const completedLessonCount = sectionLessonStates.filter(item => item.isCurrentVersionCompleted).length;
             const totalLessonCount = sectionLessonStates.length;
-            // A published section without published lessons is incomplete and blocks later sections.
-            const isCompleted = totalLessonCount > 0 && completedLessonCount === totalLessonCount;
-
+            const allEverCompleted = totalLessonCount > 0 && sectionLessonStates.every(item => item.isCompleted);
+            const isCurrentVersionCompleted = totalLessonCount > 0 && completedLessonCount === totalLessonCount;
+            const isCompleted = Boolean(sectionMilestone?.firstCompletedAt) || allEverCompleted;
+            const isLocked = sectionIsLocked && !isCompleted;
+            const access = !isLocked ? await grant("SECTION", section.id, allEverCompleted,
+                sectionLessonStates.map(item => item.lesson._id.toString())) : null;
             sectionStates.push({
-                section,
-                topics: topicStates,
-                progressStatus: this.resolveContainerStatus(
-                    sectionIsLocked,
-                    isCompleted,
-                    sectionLessonStates.some((item) => item.progressStatus === "IN_PROGRESS"),
-                    completedLessonCount,
-                ),
-                isLocked: sectionIsLocked,
-                isCompleted,
-                completedLessonCount,
-                totalLessonCount,
+                section, topics: topicStates,
+                progressStatus: this.resolveContainerStatus(isLocked, isCompleted,
+                    sectionLessonStates.some(item => item.progressStatus === "IN_PROGRESS"), completedLessonCount),
+                isLocked, isCompleted, completedLessonCount, totalLessonCount,
+                hasAccess: !isLocked, accessGrantedAt: access?.accessGrantedAt ?? null,
+                isCurrentVersionCompleted, hasNewContent: isCompleted && !isCurrentVersionCompleted,
+                newLessonCount: sectionLessonStates.filter(item => item.isNewForUser).length,
             });
 
             allPreviousSectionsCompleted = allPreviousSectionsCompleted && isCompleted;

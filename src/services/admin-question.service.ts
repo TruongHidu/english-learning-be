@@ -1,4 +1,5 @@
 import { AppError } from "../errors/app-error.js";
+import { deferUntilCurriculumCommit } from "../utils/curriculum-transaction.js";
 import {
     mapQuestionToListItemResponse,
     mapQuestionToResponse,
@@ -260,6 +261,8 @@ export class AdminQuestionService {
 
         if (status === "PUBLISHED") {
             this.validatePublishReadiness(question);
+        } else if (question.status === "PUBLISHED") {
+            await this.assertPublishedLessonsRemainReady(questionId);
         }
 
         const updated = await this.questionRepository.updateStatus(questionId, status);
@@ -286,7 +289,7 @@ export class AdminQuestionService {
             uniqueIds,
             "PUBLISHED",
         );
-        if (modifiedCount !== uniqueIds.length) {
+        if ((await this.questionRepository.findByIds(uniqueIds)).some(question => question.status !== "PUBLISHED")) {
             throw new AppError(
                 "QUESTION_BULK_PUBLISH_FAILED",
                 "Không thể phát hành đầy đủ danh sách câu hỏi",
@@ -302,8 +305,12 @@ export class AdminQuestionService {
             throw new AppError("QUESTION_NOT_FOUND", "Không tìm thấy câu hỏi", 404);
         }
 
+        if (question.status === "PUBLISHED") {
+            await this.assertPublishedLessonsRemainReady(questionId);
+        }
+
         // Remove any lesson question associations before deleting
-        await this.lessonQuestionRepository.deleteByQuestionId(questionId).catch(() => {});
+        await this.lessonQuestionRepository.deleteByQuestionId(questionId);
 
         await this.questionRepository.deleteById(questionId);
         await Promise.all([
@@ -472,6 +479,14 @@ export class AdminQuestionService {
             );
         }
 
+        const question = await this.questionRepository.findById(questionId);
+        if (!question) {
+            throw new AppError("QUESTION_NOT_FOUND", "Không tìm thấy câu hỏi", 404);
+        }
+        if (question.status === "PUBLISHED") {
+            await this.assertPublishedLessonsRemainReady(questionId, lessonId);
+        }
+
         await this.lessonQuestionRepository.deleteByLessonIdAndQuestionId(lessonId, questionId);
 
         // Update questionCount in Lesson
@@ -491,6 +506,9 @@ export class AdminQuestionService {
         const existingAssignments = await this.lessonQuestionRepository.findByLessonId(lessonId);
         const validQuestionIds = existingAssignments.map((lq) => lq.questionId.toString());
 
+        if (new Set(questionIds).size !== questionIds.length || questionIds.length !== validQuestionIds.length) {
+            throw new AppError("INVALID_QUESTION_ORDER", "Danh sách phải chứa đủ câu hỏi, không trùng lặp", 400);
+        }
         for (const qId of questionIds) {
             if (!validQuestionIds.includes(qId)) {
                 throw new AppError(
@@ -609,6 +627,29 @@ export class AdminQuestionService {
         }
     }
 
+    private async assertPublishedLessonsRemainReady(
+        questionId: string,
+        onlyLessonId?: string,
+    ): Promise<void> {
+        const lessonIds = onlyLessonId
+            ? [onlyLessonId]
+            : Array.from(new Set(
+                  (await this.lessonQuestionRepository.findByQuestionId(questionId))
+                      .map((assignment) => assignment.lessonId.toString()),
+              ));
+
+        for (const lessonId of lessonIds) {
+            const lesson = await this.lessonRepository.findById(lessonId);
+            if (lesson?.status === "PUBLISHED" && (lesson.publishedQuestionCount ?? 0) <= 1) {
+                throw new AppError(
+                    "LESSON_REQUIRES_PUBLISHED_QUESTION",
+                    `Không thể gỡ câu hỏi đã xuất bản cuối cùng khỏi bài học “${lesson.name}”`,
+                    409,
+                );
+            }
+        }
+    }
+
     private async resolveTopicIdForQuestionInput(
         input: Pick<CreateQuestionInput, "vocabularyId" | "vocabularyIds" | "matchingPairs">,
     ): Promise<string | undefined> {
@@ -694,6 +735,7 @@ export class AdminQuestionService {
     }
 
     private async safeDeleteMedia(publicId: string, kind: MediaKind): Promise<void> {
+        if (deferUntilCurriculumCommit(() => this.safeDeleteMedia(publicId, kind))) return;
         try {
             await this.mediaStorage.delete(publicId, kind);
         } catch (_error: unknown) {

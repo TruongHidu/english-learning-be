@@ -27,6 +27,7 @@ export class LearningSessionRepository implements ILearningSessionRepository {
             userId,
             lessonId,
             status: "IN_PROGRESS",
+            lessonVersion: data.lessonVersion,
             heartStart: data.heartStart,
             heartRemaining: data.heartRemaining,
             requiredScore: data.requiredScore,

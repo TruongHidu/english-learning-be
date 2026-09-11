@@ -80,6 +80,7 @@ export class LearningService {
 
         await this.learningSessionRepository.abandonInProgressByUserIdAndLessonId(userId, lessonId);
         const session = await this.learningSessionRepository.create(userId, lessonId, {
+            lessonVersion: lesson.publishedVersion ?? 1,
             heartStart: user.stats.currentHeart,
             heartRemaining: user.stats.currentHeart,
             requiredScore: lesson.requiredScore,
@@ -376,6 +377,7 @@ export class LearningService {
                 correctCount: session.correctCount,
                 wrongCount: session.wrongCount,
                 completedAt: now,
+                completedVersion: session.lessonVersion ?? 1,
             },
         );
 
@@ -409,6 +411,9 @@ export class LearningService {
                 );
             }
         }
+
+        // Persist container completion and all newly granted access before curriculum can change.
+        await this.progressionService.getLessonProgression(userId, session.lessonId.toString());
 
         let isNextLessonUnlocked = false;
         const currentLesson = await this.lessonRepository.findById(session.lessonId.toString());

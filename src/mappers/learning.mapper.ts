@@ -62,6 +62,7 @@ export const mapLearningSessionToResponse = (
 ): LearningSessionResponse => ({
     id: session._id.toString(),
     lessonId: session.lessonId.toString(),
+    lessonVersion: session.lessonVersion ?? 1,
     status: session.status,
     heartStart: session.heartStart,
     heartRemaining: session.heartRemaining,

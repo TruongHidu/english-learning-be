@@ -5,6 +5,7 @@ import type {
 } from "../../models/learning-session.model.js";
 
 export interface CreateLearningSessionData {
+    lessonVersion: number;
     heartStart: number;
     heartRemaining: number;
     requiredScore: number;

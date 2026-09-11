@@ -51,7 +51,10 @@ export class AdminLessonService {
             input.orderIndex = maxOrder + 1;
         }
 
-        const lesson = await this.lessonRepository.create(topicId, input);
+        if (input.status === "PUBLISHED") {
+            throw new AppError("LESSON_NOT_READY_TO_PUBLISH", "Hãy tạo bài nháp và gán câu hỏi đã xuất bản trước", 400);
+        }
+        const lesson = await this.lessonRepository.create(topicId, { ...input, questionCount: 0 });
         return mapLessonToResponse(lesson);
     }
 
@@ -71,7 +74,8 @@ export class AdminLessonService {
             }
         }
 
-        const updatedLesson = await this.lessonRepository.update(lessonId, input);
+        const { questionCount: _ignoredCount, ...editableInput } = input;
+        const updatedLesson = await this.lessonRepository.update(lessonId, editableInput);
         if (!updatedLesson) {
             throw new AppError("LESSON_NOT_FOUND", "Không tìm thấy màn học", 404);
         }
@@ -86,7 +90,7 @@ export class AdminLessonService {
         }
 
         if (status === "PUBLISHED") {
-            if (!existingLesson.name || existingLesson.requiredScore < 0 || existingLesson.questionCount <= 0) {
+            if (!existingLesson.name || existingLesson.requiredScore < 0 || (existingLesson.publishedQuestionCount ?? 0) <= 0) {
                 throw new AppError("LESSON_NOT_READY_TO_PUBLISH", "Màn học chưa đủ điều kiện để xuất bản", 400);
             }
         }

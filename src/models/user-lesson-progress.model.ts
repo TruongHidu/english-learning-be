@@ -19,6 +19,10 @@ export interface UserLessonProgressPersistence {
     wrongCount: number;
     unlockedAt?: Date;
     completedAt?: Date;
+    completedVersion?: number;
+    firstCompletedAt?: Date;
+    lastCompletedAt?: Date;
+    accessGrantedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -41,6 +45,10 @@ const userLessonProgressSchema = new Schema<UserLessonProgressPersistence>(
         wrongCount: { type: Number, required: true, min: 0, default: 0 },
         unlockedAt: { type: Date, required: false },
         completedAt: { type: Date, required: false },
+        completedVersion: { type: Number, min: 1 },
+        firstCompletedAt: Date,
+        lastCompletedAt: Date,
+        accessGrantedAt: Date,
     },
     { timestamps: true, versionKey: false },
 );

@@ -25,6 +25,7 @@ export interface LearningQuestionResponse {
 export interface LearningSessionResponse {
     id: string;
     lessonId: string;
+    lessonVersion: number;
     status: LearningSessionStatus;
     heartStart: number;
     heartRemaining: number;

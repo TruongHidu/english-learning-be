@@ -7,8 +7,9 @@
 - Trong một section, lesson được xếp theo `topic.orderIndex`, sau đó theo `lesson.orderIndex`. Lesson sau chỉ mở khi tất cả lesson đứng trước đã `COMPLETED`.
 - Lesson đầu của topic sau vẫn phụ thuộc lesson cuối của topic trước.
 - Section `PUBLISHED` không có lesson `PUBLISHED` được xem là chưa hoàn thành và sẽ khóa section sau.
-- Trạng thái `LOCKED`, `UNLOCKED` và `IN_PROGRESS` cũ trong database không thể vượt qua prerequisite. Chỉ `COMPLETED` được dùng làm bằng chứng pass.
-- Nếu admin chèn hoặc đổi thứ tự prerequisite mới, nội dung phía sau sẽ bị khóa lại cho đến khi prerequisite mới được hoàn thành. `isCompleted` vẫn giữ lịch sử pass, còn `isLocked` quyết định quyền truy cập hiện tại.
+- Các quy tắc tuần tự trên áp dụng khi chưa có quyền truy cập lịch sử. `UserCurriculumMilestone` lưu quyền đã cấp cho Lesson, Topic và Section; progress `UNLOCKED`, `IN_PROGRESS`, `COMPLETED` cũng là bằng chứng quyền đã có. Quyền này không bị thu hồi khi chèn hoặc đổi thứ tự bài học.
+- Milestone Topic/Section chỉ được ghi hoàn thành khi tất cả lesson đã được pass, không suy đoán từ việc hoàn thành một vài lesson. Milestone lưu danh sách lesson tại lần hoàn thành đầu tiên để nhận biết bài mới.
+- Lesson mới trong topic đã hoàn thành được mở để học và không khóa lại nội dung phía sau. Người dùng mới vẫn học tuần tự. Việc unpublish/xóa nội dung là quyết định về khả dụng của admin, khác với khóa prerequisite.
 
 ## API dành cho FE
 
@@ -40,7 +41,7 @@ Mỗi topic có `progressStatus`, `isLocked`, `isCompleted`, `completedLessonCou
 
 `GET /api/v1/topics/:topicId/lessons`
 
-Mỗi lesson có `progressStatus`, `isLocked` và `isCompleted`. FE dùng `isLocked` để vô hiệu hóa thao tác bắt đầu; backend vẫn luôn kiểm tra lại.
+Mỗi lesson có `progressStatus`, `isLocked`, `isCompleted`, `currentVersion`, `completedVersion`, `isCurrentVersionCompleted`, `hasNewContent`, `isNewForUser`, `publishedQuestionCount`, `hasAccess`, `accessGrantedAt`. FE dùng `isLocked` để vô hiệu hóa thao tác bắt đầu; backend vẫn luôn kiểm tra lại. `questionCount` trong API người học bằng `publishedQuestionCount`.
 
 ### Bắt đầu lesson
 
@@ -53,4 +54,4 @@ Request bị từ chối không tạo learning session hoặc progress `LOCKED` 
 
 ## Trạng thái pass
 
-Module progression chỉ tin `UserLessonProgress.status === "COMPLETED"`. Việc chuyển sang `COMPLETED` phải do luồng chấm bài phía server thực hiện sau khi `score >= lesson.requiredScore`; không nhận cờ `passed` hoặc `score` do client tự khai báo.
+Việc chuyển sang `COMPLETED` phải do luồng chấm bài phía server thực hiện sau khi `score >= session.requiredScore`; không nhận cờ `passed` hoặc `score` do client tự khai báo. Replay thất bại không làm mất lịch sử pass. Xem [version nội dung và migration](lesson-content-versioning.md) để biết semantics và quy trình triển khai.

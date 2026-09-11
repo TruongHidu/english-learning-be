@@ -6,6 +6,7 @@ export interface ILessonQuestionRepository {
         lessonId: string,
         questionId: string,
     ): Promise<LessonQuestionDocument | null>;
+    findByQuestionId(questionId: string): Promise<LessonQuestionDocument[]>;
     createMany(lessonId: string, questionIds: string[]): Promise<LessonQuestionDocument[]>;
     deleteByLessonIdAndQuestionId(lessonId: string, questionId: string): Promise<void>;
     deleteByQuestionId(questionId: string): Promise<void>;

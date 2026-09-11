@@ -9,6 +9,9 @@ export interface LessonPersistence {
     orderIndex: number;
     requiredScore: number;
     questionCount: number;
+    publishedQuestionCount: number;
+    publishedVersion: number;
+    publishedContentFingerprint?: string;
     xpReward: number;
     diamondReward: number;
     status: ContentStatus;
@@ -49,12 +52,15 @@ const lessonSchema = new Schema<LessonPersistence>(
             max: 100,
             default: 70,
         },
+        publishedVersion: { type: Number, default: 1, min: 1, required: true },
+        publishedContentFingerprint: { type: String, required: false },
+        publishedQuestionCount: { type: Number, default: 0, min: 0, required: true },
         questionCount: {
             type: Number,
             required: true,
             min: 0,
             max: 100,
-            default: 10,
+            default: 0,
         },
 
         xpReward: {

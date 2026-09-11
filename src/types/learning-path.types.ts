@@ -13,8 +13,13 @@ export interface UserCourseSectionResponse {
     progressStatus: UserLessonProgressStatus;
     isLocked: boolean;
     isCompleted: boolean;
+    hasAccess: boolean;
+    accessGrantedAt: Date | null;
+    isCurrentVersionCompleted: boolean;
+    hasNewContent: boolean;
     completedLessonCount: number;
     totalLessonCount: number;
+    newLessonCount: number;
 }
 
 export interface UserCourseSectionsResponse {
@@ -30,14 +35,23 @@ export interface UserTopicResponse {
     orderIndex: number;
     lessonCount: number;
     totalLessonCount: number;
+    newLessonCount: number;
     progressStatus: UserLessonProgressStatus;
     isLocked: boolean;
     isCompleted: boolean;
+    hasAccess: boolean;
+    accessGrantedAt: Date | null;
+    isCurrentVersionCompleted: boolean;
+    hasNewContent: boolean;
     completedLessonCount: number;
 }
 
 // DTO trả về cho mỗi lesson trong lộ trình học (Duolingo style)
 export interface UserLessonPathItemResponse {
+    currentVersion: number;
+    completedVersion: number;
+    isNewForUser: boolean;
+    publishedQuestionCount: number;
     id: string;
     name: string;
     description: string | null;
@@ -49,6 +63,10 @@ export interface UserLessonPathItemResponse {
     progressStatus: UserLessonProgressStatus;
     isLocked: boolean;
     isCompleted: boolean;
+    hasAccess: boolean;
+    accessGrantedAt: Date | null;
+    isCurrentVersionCompleted: boolean;
+    hasNewContent: boolean;
     bestScore: number;
     totalAttempts: number;
 }
@@ -61,8 +79,13 @@ export interface UserTopicSummaryResponse {
     progressStatus: UserLessonProgressStatus;
     isLocked: boolean;
     isCompleted: boolean;
+    hasAccess: boolean;
+    accessGrantedAt: Date | null;
+    isCurrentVersionCompleted: boolean;
+    hasNewContent: boolean;
     completedLessonCount: number;
     totalLessonCount: number;
+    newLessonCount: number;
 }
 
 // Response tổng cho API GET /topics/:topicId/lessons

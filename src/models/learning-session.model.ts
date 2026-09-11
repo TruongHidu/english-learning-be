@@ -41,6 +41,7 @@ export interface LearningSessionPersistence {
     status: LearningSessionStatus;
     heartStart: number;
     heartRemaining: number;
+    lessonVersion: number;
     requiredScore: number;
     totalQuestions: number;
     questionIds: Types.ObjectId[];
@@ -73,6 +74,7 @@ const learningSessionSchema = new Schema<LearningSessionPersistence>(
         },
         heartStart: { type: Number, required: true, min: 0 },
         heartRemaining: { type: Number, required: true, min: 0 },
+        lessonVersion: { type: Number, default: 1, required: true, min: 1 },
         requiredScore: { type: Number, required: true, min: 0, max: 100, default: 80 },
         totalQuestions: { type: Number, required: true, min: 0 },
         questionIds: {

@@ -1,3 +1,5 @@
+import { transactionalMethods } from "../utils/curriculum-transaction.js";
+import { CurriculumMilestoneRepository } from "../repositories/implementations/curriculum-milestone.repository.js";
 import { AdminDiamondService } from '../services/admin-diamond.service.js';
 import { AdminDiamondController } from '../controllers/admin-diamond.controller.js';
 import { AuthController } from "../controllers/auth.controller.js";
@@ -111,27 +113,28 @@ const adminTopicService = new AdminTopicService(
     lessonRepository,
     vocabularyRepository,
 );
-const adminLessonService = new AdminLessonService(topicRepository, lessonRepository);
+const adminLessonService = transactionalMethods(new AdminLessonService(topicRepository, lessonRepository), ["createLesson", "updateLesson", "updateLessonStatus", "deleteLesson", "reorderLessons"]);
 const adminVocabularyService = new AdminVocabularyService(
     topicRepository,
     vocabularyRepository,
     questionRepository,
 );
-const adminQuestionService = new AdminQuestionService(
+const adminQuestionService = transactionalMethods(new AdminQuestionService(
     questionRepository,
     vocabularyRepository,
     lessonRepository,
     lessonQuestionRepository,
     mediaStorage,
-);
-const learningProgressionService = new LearningProgressionService(
+), ["assignQuestionsToLesson", "removeQuestionFromLesson", "reorderLessonQuestions", "updateQuestionStatus", "bulkPublishQuestions", "deleteQuestion"]);
+const learningProgressionService = transactionalMethods(new LearningProgressionService(
     courseRepository,
     sectionRepository,
     topicRepository,
     lessonRepository,
     userLessonProgressRepository,
-);
-export const learningService = new LearningService(
+    new CurriculumMilestoneRepository(),
+), ["getCourseProgression", "getSectionProgression", "getTopicProgression", "getLessonProgression"], false);
+export const learningService = transactionalMethods(new LearningService(
     lessonRepository,
     lessonQuestionRepository,
     questionRepository,
@@ -143,7 +146,7 @@ export const learningService = new LearningService(
     userStatsService,
     userVocabularyRepository,
     translationEvaluator,
-);
+), ["startLesson", "submitAnswer"], false);
 const learningPathService = new LearningPathService(learningProgressionService);
 const shopService = new ShopService(userRepository, heartService, diamondTransactionRepository, diamondPackageRepository);
 

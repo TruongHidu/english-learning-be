@@ -43,6 +43,9 @@ export interface UpdateLessonStatusInput {
 }
 
 export interface LessonResponse {
+    publishedVersion: number;
+    assignedQuestionCount: number;
+    publishedQuestionCount: number;
     id: string;
     topicId: string;
     name: string;
