@@ -1,6 +1,7 @@
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 
 import { AppError } from "../errors/app-error.js";
+import { DiamondTransactionModel } from "../models/diamond-transaction.model.js";
 import { effectiveCurrentStreak } from "../utils/streak.js";
 import type { ITranslationEvaluator } from "../ai/interfaces/translation-evaluator.interface.js";
 import { TRANSLATION_MIN_SCORE } from "../config/translation-grading.config.js";
@@ -377,13 +378,31 @@ export class LearningService {
             correctDifficulties.length = session.correctCount;
         }
 
+        const currentLesson = await this.lessonRepository.findById(session.lessonId.toString());
+
+        let existingDiamondTx = false;
+        if (mongoose.connection.readyState === 1) {
+            const tx = await DiamondTransactionModel.findOne({
+                userId,
+                type: "LESSON_REWARD",
+                referenceType: "LESSON_SESSION",
+                referenceId: session._id.toString(),
+            }).lean().exec();
+            existingDiamondTx = Boolean(tx);
+        }
+
         const reward = this.userStatsService.calculateLessonRewards({
             correctCount: session.correctCount,
             totalQuestions: session.totalQuestions,
             requiredScore: session.requiredScore ?? 80,
             isAlreadyCompleted,
             correctDifficulties,
+            baseDiamondReward: existingDiamondTx ? 0 : currentLesson?.diamondReward,
         });
+
+        if (existingDiamondTx) {
+            reward.diamondEarned = 0;
+        }
 
         const previousBestScore = existingProgress?.bestScore ?? 0;
         const previousAttempts = existingProgress?.totalAttempts ?? 0;
@@ -421,24 +440,40 @@ export class LearningService {
                   lastStudyDate: now,
               };
 
-        const learnedVocabularyIds = this.getLearnedVocabularyIds(session);
-        if (learnedVocabularyIds.length > 0) {
-            const lesson = await this.lessonRepository.findById(session.lessonId.toString());
-            if (lesson?.topicId) {
-                await this.userVocabularyRepository.upsertLearnedVocabularies(
-                    userId,
-                    learnedVocabularyIds,
-                    lesson.topicId.toString(),
-                    session.lessonId.toString(),
-                );
+        if (reward.diamondEarned > 0 && mongoose.connection.readyState === 1) {
+            try {
+                await DiamondTransactionModel.create([{
+                    userId: new Types.ObjectId(userId),
+                    amount: reward.diamondEarned,
+                    type: "LESSON_REWARD",
+                    balanceBefore: updatedStats.diamond - reward.diamondEarned,
+                    balanceAfter: updatedStats.diamond,
+                    referenceType: "LESSON_SESSION",
+                    referenceId: session._id.toString(),
+                    description: `Hoàn thành bài học: ${currentLesson?.name || "Bài học"}${reward.score === 100 ? " (Hoàn hảo)" : ""}`,
+                }]);
+            } catch (error: unknown) {
+                const duplicate = error as { code?: number };
+                if (duplicate?.code !== 11000) {
+                    throw error;
+                }
             }
+        }
+
+        const learnedVocabularyIds = this.getLearnedVocabularyIds(session);
+        if (learnedVocabularyIds.length > 0 && currentLesson?.topicId) {
+            await this.userVocabularyRepository.upsertLearnedVocabularies(
+                userId,
+                learnedVocabularyIds,
+                currentLesson.topicId.toString(),
+                session.lessonId.toString(),
+            );
         }
 
         // Persist container completion and all newly granted access before curriculum can change.
         await this.progressionService.getLessonProgression(userId, session.lessonId.toString());
 
         let isNextLessonUnlocked = false;
-        const currentLesson = await this.lessonRepository.findById(session.lessonId.toString());
         if (currentLesson) {
             const nextLesson = await this.lessonRepository.findNextLesson(
                 currentLesson.topicId.toString(),
@@ -454,6 +489,7 @@ export class LearningService {
             xpEarned: reward.xpEarned,
             diamondEarned: reward.diamondEarned,
             totalXp: updatedStats.totalXp,
+            totalDiamond: updatedStats.diamond,
             level: updatedStats.level,
             currentStreak: effectiveCurrentStreak(updatedStats),
             longestStreak: updatedStats.longestStreak,

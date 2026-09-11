@@ -3,6 +3,7 @@ import { AppError } from "../../errors/app-error.js";
 import { PaymentTransactionModel, type PaymentPersistence } from "../../models/payment-transaction.model.js";
 import { UserModel } from "../../models/user.model.js";
 import { DiamondTransactionModel } from "../../models/diamond-transaction.model.js";
+import { realtimeService } from "../../services/realtime.service.js";
 import type { NewPayment, Payment, PaymentConfirmation } from "../../types/payment.types.js";
 import type { IPaymentTransactionRepository } from "../interfaces/payment-transaction.repository.interface.js";
 
@@ -74,8 +75,10 @@ export class PaymentTransactionRepository implements IPaymentTransactionReposito
     }
     async confirm(payment: Payment, confirmation: PaymentConfirmation): Promise<"CONFIRMED" | "ALREADY_CONFIRMED"> {
         const session = await mongoose.startSession();
+        let notifiedUserId: string | null = null;
+        let notifiedDiamond: number | null = null;
         try {
-            return await session.withTransaction(async () => {
+            const res = await session.withTransaction(async () => {
                 const updated = await PaymentTransactionModel.findOneAndUpdate(
                     { _id: payment.id, status: confirmation.status === "SUCCESS" ?
                         { $in: ["PENDING", "CANCELLED", "EXPIRED"] } : "PENDING" },
@@ -100,9 +103,18 @@ export class PaymentTransactionRepository implements IPaymentTransactionReposito
                         referenceId: updated._id.toString(),
                         description: `Nạp kim cương ${updated.transactionCode}`,
                     }], { session });
+                    notifiedUserId = updated.userId.toString();
+                    notifiedDiamond = user.stats.diamond;
                 }
                 return "CONFIRMED" as const;
             });
+            if (res === "CONFIRMED" && notifiedUserId && notifiedDiamond !== null) {
+                realtimeService.notifyUser(notifiedUserId, {
+                    type: "DIAMOND_UPDATED",
+                    diamond: notifiedDiamond,
+                });
+            }
+            return res;
         } finally {
             await session.endSession();
         }

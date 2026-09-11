@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { resolveStreakTimezone } from "../src/config/streak.config.js";
 import { calculateStreakTransition, effectiveCurrentStreak, localDayNumber } from "../src/utils/streak.js";
-import { UserStatsService } from "../src/services/user-stats.service.js";
+import { UserStatsService, normalizeBaseDiamondReward } from "../src/services/user-stats.service.js";
 import { UserService } from "../src/services/user.service.js";
 import { AuthService } from "../src/services/auth.service.js";
 import { HeartService } from "../src/services/heart.service.js";
@@ -250,4 +250,125 @@ test("calculateLessonRewards handles all difficulty, perfect and anti-grind repl
     });
     assert.equal(case6.xpEarned, 10);
     assert.equal(case6.diamondEarned, 0);
+});
+
+test("calculateLessonRewards handles custom baseDiamondReward, perfect diamond bonus, anti-grind and validation", () => {
+    const h = harness();
+
+    // Test 1: Lần đầu, baseDiamondReward mặc định (undefined), không Perfect (6/8 câu -> passed) -> 5 diamond
+    const test1 = h.service.calculateLessonRewards({
+        correctCount: 6,
+        totalQuestions: 8,
+        requiredScore: 70,
+        isAlreadyCompleted: false,
+        baseDiamondReward: undefined,
+    });
+    assert.equal(test1.diamondEarned, 5);
+
+    // Test 2: Lần đầu, custom baseDiamondReward = 10, không Perfect (6/8 câu -> passed) -> 10 diamond
+    const test2 = h.service.calculateLessonRewards({
+        correctCount: 6,
+        totalQuestions: 8,
+        requiredScore: 70,
+        isAlreadyCompleted: false,
+        baseDiamondReward: 10,
+    });
+    assert.equal(test2.diamondEarned, 10);
+
+    // Test 3: Lần đầu, baseDiamondReward mặc định (undefined), Perfect (8/8 câu -> passed) -> 10 diamond (5 base + 5 bonus)
+    const test3 = h.service.calculateLessonRewards({
+        correctCount: 8,
+        totalQuestions: 8,
+        requiredScore: 80,
+        isAlreadyCompleted: false,
+    });
+    assert.equal(test3.diamondEarned, 10);
+
+    // Test 4: Lần đầu, custom baseDiamondReward = 10, Perfect (8/8 câu -> passed) -> 15 diamond (10 base + 5 bonus)
+    const test4 = h.service.calculateLessonRewards({
+        correctCount: 8,
+        totalQuestions: 8,
+        requiredScore: 80,
+        isAlreadyCompleted: false,
+        baseDiamondReward: 10,
+    });
+    assert.equal(test4.diamondEarned, 15);
+
+    // Test 5: Replay (isAlreadyCompleted = true), không Perfect -> 0 diamond
+    const test5ReplayNormal = h.service.calculateLessonRewards({
+        correctCount: 6,
+        totalQuestions: 8,
+        requiredScore: 70,
+        isAlreadyCompleted: true,
+        baseDiamondReward: 10,
+    });
+    assert.equal(test5ReplayNormal.diamondEarned, 0);
+
+    // Test 5b: Replay (isAlreadyCompleted = true), Perfect -> 0 diamond
+    const test5ReplayPerfect = h.service.calculateLessonRewards({
+        correctCount: 8,
+        totalQuestions: 8,
+        requiredScore: 80,
+        isAlreadyCompleted: true,
+        baseDiamondReward: 10,
+    });
+    assert.equal(test5ReplayPerfect.diamondEarned, 0);
+
+    // Test 6: Validation của baseDiamondReward
+    // 6a: Số âm -> fallback 5
+    const test6Negative = h.service.calculateLessonRewards({
+        correctCount: 6,
+        totalQuestions: 8,
+        requiredScore: 70,
+        isAlreadyCompleted: false,
+        baseDiamondReward: -5,
+    });
+    assert.equal(test6Negative.diamondEarned, 5);
+
+    // 6b: NaN -> fallback 5
+    const test6NaN = h.service.calculateLessonRewards({
+        correctCount: 6,
+        totalQuestions: 8,
+        requiredScore: 70,
+        isAlreadyCompleted: false,
+        baseDiamondReward: Number.NaN,
+    });
+    assert.equal(test6NaN.diamondEarned, 5);
+
+    // 6c: 0 là giá trị hợp lệ -> không Perfect: 0 diamond; Perfect: 0 + 5 = 5 diamond
+    const test6ZeroNotPerfect = h.service.calculateLessonRewards({
+        correctCount: 6,
+        totalQuestions: 8,
+        requiredScore: 70,
+        isAlreadyCompleted: false,
+        baseDiamondReward: 0,
+    });
+    assert.equal(test6ZeroNotPerfect.diamondEarned, 0);
+
+    const test6ZeroPerfect = h.service.calculateLessonRewards({
+        correctCount: 8,
+        totalQuestions: 8,
+        requiredScore: 80,
+        isAlreadyCompleted: false,
+        baseDiamondReward: 0,
+    });
+    assert.equal(test6ZeroPerfect.diamondEarned, 5);
+
+    // Test 7: Không đạt (isPassed = false: 3/8 đúng, 38% < 80%) -> 0 diamond
+    const test7Failed = h.service.calculateLessonRewards({
+        correctCount: 3,
+        totalQuestions: 8,
+        requiredScore: 80,
+        isAlreadyCompleted: false,
+        baseDiamondReward: 10,
+    });
+    assert.equal(test7Failed.diamondEarned, 0);
+
+    // Helper normalizeBaseDiamondReward unit checks
+    assert.equal(normalizeBaseDiamondReward(undefined), 5);
+    assert.equal(normalizeBaseDiamondReward(null), 5);
+    assert.equal(normalizeBaseDiamondReward(-10), 5);
+    assert.equal(normalizeBaseDiamondReward(Number.NaN), 5);
+    assert.equal(normalizeBaseDiamondReward(0), 0);
+    assert.equal(normalizeBaseDiamondReward(12), 12);
 });

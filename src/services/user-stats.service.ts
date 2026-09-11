@@ -10,6 +10,13 @@ export interface LessonRewardInput {
     requiredScore: number;
     isAlreadyCompleted?: boolean;
     correctDifficulties?: Array<VocabularyDifficulty | string | undefined>;
+    baseDiamondReward?: number;
+}
+
+export function normalizeBaseDiamondReward(reward?: number | null): number {
+    if (reward === null || reward === undefined) return 5;
+    if (typeof reward !== "number" || Number.isNaN(reward) || reward < 0) return 5;
+    return reward;
 }
 
 export interface LessonRewardResult {
@@ -31,7 +38,7 @@ export class UserStatsService {
     constructor(private readonly userRepository: IUserRepository) {}
 
     calculateLessonRewards(input: LessonRewardInput): LessonRewardResult {
-        const { correctCount, totalQuestions, requiredScore, isAlreadyCompleted, correctDifficulties } = input;
+        const { correctCount, totalQuestions, requiredScore, isAlreadyCompleted, correctDifficulties, baseDiamondReward } = input;
 
         const score = totalQuestions > 0
             ? Math.round((correctCount / totalQuestions) * 100)
@@ -65,7 +72,9 @@ export class UserStatsService {
         }
 
         const xpEarned = 10 + questionXp + (isPerfect ? 5 : 0);
-        const diamondEarned = (isPassed ? 5 : 0) + (isPerfect ? 5 : 0);
+        const baseDiamond = isPassed ? normalizeBaseDiamondReward(baseDiamondReward) : 0;
+        const perfectBonus = (isPassed && isPerfect) ? 5 : 0;
+        const diamondEarned = baseDiamond + perfectBonus;
 
         return { score, xpEarned, diamondEarned };
     }
