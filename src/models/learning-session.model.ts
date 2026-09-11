@@ -1,5 +1,6 @@
 import { Schema, model, type HydratedDocument, type Types } from "mongoose";
 import { QUESTION_TYPES, type QuestionType } from "../types/question.types.js";
+import { VOCABULARY_DIFFICULTIES, type VocabularyDifficulty } from "../types/vocabulary.types.js";
 
 export const LEARNING_SESSION_STATUSES = [
     "IN_PROGRESS",
@@ -28,6 +29,7 @@ export interface LearningQuestionSnapshotMatchingPair {
 export interface LearningQuestionSnapshot {
     questionId: Types.ObjectId;
     type: QuestionType;
+    difficulty?: VocabularyDifficulty;
     correctAnswer?: unknown;
     options?: LearningQuestionSnapshotOption[];
     matchingPairs?: LearningQuestionSnapshotMatchingPair[];
@@ -105,6 +107,11 @@ const learningSessionSchema = new Schema<LearningSessionPersistence>(
                             type: String,
                             enum: QUESTION_TYPES,
                             required: true,
+                        },
+                        difficulty: {
+                            type: String,
+                            enum: VOCABULARY_DIFFICULTIES,
+                            required: false,
                         },
                         correctAnswer: { type: Schema.Types.Mixed, required: false },
                         options: {

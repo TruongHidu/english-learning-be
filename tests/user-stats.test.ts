@@ -183,3 +183,71 @@ test("unknown database outcomes are not retried and a disappeared user reports n
     await assert.rejects(() => h.service.applyLessonCompletionStats(h.user.id, h.user.stats, 5, 0, now),
         (error: unknown) => error instanceof AppError && error.code === "USER_NOT_FOUND");
 });
+
+test("calculateLessonRewards handles all difficulty, perfect and anti-grind replay cases", () => {
+    const h = harness();
+
+    // Case 1: Lần đầu, không có difficulty (8 câu, 8 đúng -> 10 + 16 + 5 = 31 XP)
+    const case1 = h.service.calculateLessonRewards({
+        correctCount: 8,
+        totalQuestions: 8,
+        requiredScore: 80,
+        isAlreadyCompleted: false,
+    });
+    assert.equal(case1.xpEarned, 31);
+    assert.equal(case1.diamondEarned, 10);
+
+    // Case 2: Lần đầu, có difficulty (4 EASY, 2 MEDIUM, 2 HARD, 8 đúng -> 10 + 24 + 5 = 39 XP)
+    const case2 = h.service.calculateLessonRewards({
+        correctCount: 8,
+        totalQuestions: 8,
+        requiredScore: 80,
+        isAlreadyCompleted: false,
+        correctDifficulties: ["EASY", "EASY", "EASY", "EASY", "MEDIUM", "MEDIUM", "HARD", "HARD"],
+    });
+    assert.equal(case2.xpEarned, 39);
+    assert.equal(case2.diamondEarned, 10);
+
+    // Case 3: Lần đầu, không Perfect (8 câu, 6 đúng: 4 EASY, 2 MEDIUM -> 10 + 14 + 0 = 24 XP)
+    const case3 = h.service.calculateLessonRewards({
+        correctCount: 6,
+        totalQuestions: 8,
+        requiredScore: 70,
+        isAlreadyCompleted: false,
+        correctDifficulties: ["EASY", "EASY", "EASY", "EASY", "MEDIUM", "MEDIUM"],
+    });
+    assert.equal(case3.xpEarned, 24);
+    assert.equal(case3.diamondEarned, 5);
+
+    // Case 4: Difficulty thiếu một phần (5 câu đúng: EASY, HARD, undefined, MEDIUM, undefined -> 2+5+2+3+2 = 14 câu XP -> 10+14+0 = 24 XP)
+    const case4 = h.service.calculateLessonRewards({
+        correctCount: 5,
+        totalQuestions: 8,
+        requiredScore: 60,
+        isAlreadyCompleted: false,
+        correctDifficulties: ["EASY", "HARD", undefined, "MEDIUM", undefined],
+    });
+    assert.equal(case4.xpEarned, 24); // 10 + 14 = 24
+
+    // Case 5: Học lại (isAlreadyCompleted), không Perfect (8 câu, 6 đúng, passed) -> 5 XP, 0 diamond
+    const case5 = h.service.calculateLessonRewards({
+        correctCount: 6,
+        totalQuestions: 8,
+        requiredScore: 70,
+        isAlreadyCompleted: true,
+        correctDifficulties: ["HARD", "HARD", "HARD", "HARD", "HARD", "HARD"],
+    });
+    assert.equal(case5.xpEarned, 5);
+    assert.equal(case5.diamondEarned, 0);
+
+    // Case 6: Học lại (isAlreadyCompleted), Perfect (8 câu, 8 đúng, passed) -> 10 XP, 0 diamond
+    const case6 = h.service.calculateLessonRewards({
+        correctCount: 8,
+        totalQuestions: 8,
+        requiredScore: 80,
+        isAlreadyCompleted: true,
+        correctDifficulties: ["HARD", "HARD", "HARD", "HARD", "HARD", "HARD", "HARD", "HARD"],
+    });
+    assert.equal(case6.xpEarned, 10);
+    assert.equal(case6.diamondEarned, 0);
+});

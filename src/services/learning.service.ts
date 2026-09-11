@@ -328,6 +328,7 @@ export class LearningService {
         return {
             questionId: question._id,
             type: question.type,
+            difficulty: question.difficulty,
             correctAnswer: question.correctAnswer,
             options: options && options.length > 0 ? options : undefined,
             matchingPairs: matchingPairs && matchingPairs.length > 0 ? matchingPairs : undefined,
@@ -356,11 +357,32 @@ export class LearningService {
             session.lessonId.toString(),
         );
         const isAlreadyCompleted = existingProgress?.status === "COMPLETED";
+
+        const wrongQuestionIdSet = new Set(
+            (session.wrongQuestionIds ?? []).map(String),
+        );
+
+        const correctSnapshots = (session.questionSnapshots ?? []).filter(
+            (snapshot) => !wrongQuestionIdSet.has(String(snapshot.questionId)),
+        );
+
+        const correctDifficulties = correctSnapshots.map(
+            (snapshot) => snapshot.difficulty ?? "EASY",
+        );
+
+        while (correctDifficulties.length < session.correctCount) {
+            correctDifficulties.push("EASY");
+        }
+        if (correctDifficulties.length > session.correctCount) {
+            correctDifficulties.length = session.correctCount;
+        }
+
         const reward = this.userStatsService.calculateLessonRewards({
             correctCount: session.correctCount,
             totalQuestions: session.totalQuestions,
             requiredScore: session.requiredScore ?? 80,
             isAlreadyCompleted,
+            correctDifficulties,
         });
 
         const previousBestScore = existingProgress?.bestScore ?? 0;
