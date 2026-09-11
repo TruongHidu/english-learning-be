@@ -1,0 +1,99 @@
+name: Test and deploy backend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-backend
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: Test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build backend
+        run: npm run build
+
+  deploy:
+    name: Deploy to VPS
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Pull, build and restart backend
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p "$VPS_PORT" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" 'bash -se' <<'REMOTE'
+          set -Eeuo pipefail
+
+          export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+          APP_DIR="/var/www/english-learning/english-learning-be"
+
+          cd "$APP_DIR"
+          test -f .env
+
+          git pull --ff-only origin main
+
+          npm ci --include=dev
+          npm run build
+          npm prune --omit=dev
+
+          pm2 restart english-learning-be --update-env
+          pm2 save
+
+          for attempt in $(seq 1 15); do
+            if curl --fail --silent --show-error \
+              http://127.0.0.1:5000/api/v1/health; then
+              echo
+              echo "Backend deployment succeeded"
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "Backend health check failed"
+          pm2 logs english-learning-be --lines 80 --nostream
+          exit 1
+          REMOTE
