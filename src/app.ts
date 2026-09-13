@@ -4,6 +4,8 @@ import adminDiamondPackageRouter from './routes/admin-diamond-package.routes.js'
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
+import { refreshCookieOptions, refreshLifetimeMs } from "./config/auth.config.js";
 
 import { errorHandler } from "./middlewares/error.middleware.js";
 import adminCourseRouter from "./routes/admin-course.routes.js";
@@ -31,6 +33,10 @@ import {
 } from "./config/container.js";
 
 const app = express();
+refreshCookieOptions();
+refreshLifetimeMs();
+if (process.env.FRONTEND_URL === "*") throw new Error("FRONTEND_URL must be a specific origin");
+app.use(cookieParser());
 
 app.use(
     cors({

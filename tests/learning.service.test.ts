@@ -476,7 +476,7 @@ test("a score equal to requiredScore passes and unlocks the next lesson", async 
     assert.equal(response.rewards.currentStreak, 1);
     assert.equal(harness.user.stats.currentStreak, 1);
     assert.deepEqual(Object.keys(response.rewards).sort(), [
-        "xpEarned", "diamondEarned", "totalXp", "level", "currentStreak", "longestStreak", "learnedVocabularyIds", "isNextLessonUnlocked",
+        "xpEarned", "diamondEarned", "totalXp", "totalDiamond", "level", "currentStreak", "longestStreak", "learnedVocabularyIds", "isNextLessonUnlocked",
     ].sort());
     assert.deepEqual(Object.keys(response).sort(), [
         "isCorrect", "isPassed", "correctAnswer", "explanation", "heartsRemaining", "nextHeartAt", "sessionStatus", "correctCount", "wrongCount", "score", "rewards",

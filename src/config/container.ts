@@ -3,6 +3,8 @@ import { CurriculumMilestoneRepository } from "../repositories/implementations/c
 import { AdminDiamondService } from '../services/admin-diamond.service.js';
 import { AdminDiamondController } from '../controllers/admin-diamond.controller.js';
 import { AuthController } from "../controllers/auth.controller.js";
+import { RefreshSessionService } from "../services/refresh-session.service.js";
+import { RefreshSessionRepository } from "../repositories/implementations/refresh-session.repository.js";
 import { CourseController } from "../controllers/course.controller.js";
 import { SectionController } from "../controllers/section.controller.js";
 import { UserController } from "../controllers/user.controller.js";
@@ -172,7 +174,7 @@ const vocabularyReviewService = new VocabularyReviewService(
 export const userVocabularyController = new UserVocabularyController(userVocabularyService);
 export const vocabularyReviewController = new VocabularyReviewController(vocabularyReviewService);
 
-export const authController = new AuthController(authService);
+export const authController = new AuthController(authService, new RefreshSessionService(new RefreshSessionRepository(), userRepository, tokenService));
 export const userController = new UserController(userService);
 export const courseController = new CourseController(courseService);
 export const sectionController = new SectionController(sectionService);

@@ -342,6 +342,10 @@ export class AdminDiamondService {
 
         user.status = status;
         await user.save();
+        if (status !== "ACTIVE") {
+            const { RefreshSessionRepository } = await import("../repositories/implementations/refresh-session.repository.js");
+            await new RefreshSessionRepository().revokeUser(userId);
+        }
 
         realtimeService.notifyUser(userId, {
             type: "ACCOUNT_STATUS_CHANGED",

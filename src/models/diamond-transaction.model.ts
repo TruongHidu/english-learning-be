@@ -44,6 +44,17 @@ diamondTransactionSchema.index({ referenceId: 1 }, {
     unique: true,
     partialFilterExpression: { type: "TOP_UP", referenceType: "PAYMENT", referenceId: { $type: "string" } },
 });
+diamondTransactionSchema.index(
+    { userId: 1, type: 1, referenceType: 1, referenceId: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            type: "LESSON_REWARD",
+            referenceType: "LESSON_SESSION",
+            referenceId: { $type: "string" },
+        },
+    },
+);
 
 export const DiamondTransactionModel = model<DiamondTransactionPersistence>(
     "DiamondTransaction",

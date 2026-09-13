@@ -1,5 +1,6 @@
 import type { UserStats } from "../types/auth.types.js";
 import type { IUserRepository } from "../repositories/interfaces/user.repository.interface.js";
+import type { VocabularyDifficulty } from "../types/vocabulary.types.js";
 import { AppError } from "../errors/app-error.js";
 import { calculateStreakTransition, type StreakTransition } from "../utils/streak.js";
 
@@ -8,6 +9,14 @@ export interface LessonRewardInput {
     totalQuestions: number;
     requiredScore: number;
     isAlreadyCompleted?: boolean;
+    correctDifficulties?: Array<VocabularyDifficulty | string | undefined>;
+    baseDiamondReward?: number;
+}
+
+export function normalizeBaseDiamondReward(reward?: number | null): number {
+    if (reward === null || reward === undefined) return 5;
+    if (typeof reward !== "number" || Number.isNaN(reward) || reward < 0) return 5;
+    return reward;
 }
 
 export interface LessonRewardResult {
@@ -29,13 +38,13 @@ export class UserStatsService {
     constructor(private readonly userRepository: IUserRepository) {}
 
     calculateLessonRewards(input: LessonRewardInput): LessonRewardResult {
-        const { correctCount, totalQuestions, requiredScore, isAlreadyCompleted } = input;
+        const { correctCount, totalQuestions, requiredScore, isAlreadyCompleted, correctDifficulties, baseDiamondReward } = input;
 
         const score = totalQuestions > 0
             ? Math.round((correctCount / totalQuestions) * 100)
             : 0;
 
-        const isPerfect = score === 100;
+        const isPerfect = totalQuestions > 0 && correctCount === totalQuestions;
         const isPassed = score >= requiredScore;
 
         if (isAlreadyCompleted) {
@@ -43,8 +52,29 @@ export class UserStatsService {
             return { score, xpEarned, diamondEarned: 0 };
         }
 
-        const xpEarned = 10 + correctCount * 2 + (isPerfect ? 5 : 0);
-        const diamondEarned = (isPassed ? 5 : 0) + (isPerfect ? 5 : 0);
+        const difficultyXpMap: Record<string, number> = {
+            EASY: 2,
+            MEDIUM: 3,
+            HARD: 5,
+        };
+
+        let questionXp = 0;
+        if (correctDifficulties && correctDifficulties.length > 0) {
+            const normalizedDifficulties = [...correctDifficulties];
+            while (normalizedDifficulties.length < correctCount) {
+                normalizedDifficulties.push("EASY");
+            }
+            questionXp = normalizedDifficulties
+                .slice(0, correctCount)
+                .reduce((sum, diff) => sum + (diff ? (difficultyXpMap[diff] ?? 2) : 2), 0);
+        } else {
+            questionXp = correctCount * 2;
+        }
+
+        const xpEarned = 10 + questionXp + (isPerfect ? 5 : 0);
+        const baseDiamond = isPassed ? normalizeBaseDiamondReward(baseDiamondReward) : 0;
+        const perfectBonus = (isPassed && isPerfect) ? 5 : 0;
+        const diamondEarned = baseDiamond + perfectBonus;
 
         return { score, xpEarned, diamondEarned };
     }
