@@ -167,8 +167,6 @@ const userVocabularyService = new UserVocabularyService(
 );
 
 const vocabularyReviewService = new VocabularyReviewService(
-    userVocabularyRepository,
-    vocabularyRepository,
     userStatsService,
     userRepository
 );

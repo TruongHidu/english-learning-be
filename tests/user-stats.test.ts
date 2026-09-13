@@ -6,10 +6,9 @@ import { UserStatsService, normalizeBaseDiamondReward } from "../src/services/us
 import { UserService } from "../src/services/user.service.js";
 import { AuthService } from "../src/services/auth.service.js";
 import { HeartService } from "../src/services/heart.service.js";
-import { VocabularyReviewService } from "../src/services/vocabulary-review.service.js";
+import { calculateAdaptiveReview } from "../src/services/vocabulary-review.service.js";
 import type { IUserRepository } from "../src/repositories/interfaces/user.repository.interface.js";
 import type { IUserVocabularyRepository } from "../src/repositories/interfaces/user-vocabulary.repository.interface.js";
-import type { IVocabularyRepository } from "../src/repositories/interfaces/vocabulary.repository.interface.js";
 import type { IPasswordHasher } from "../src/security/password-hasher.interface.js";
 import type { ITokenService } from "../src/security/token-service.interface.js";
 import type { User, UserStats } from "../src/types/auth.types.js";
@@ -143,22 +142,15 @@ test("profile and login return expired streak without changing response fields o
     assert.equal(h.writes(), 0);
 });
 
-test("a valid review, including an incorrect answer, earns streak with the existing reward shape", async () => {
-    const h = harness();
-    const vocab = { reviewLevel: 0, correctCount: 0, reviewCount: 0, incorrectCount: 0, status: "LEARNED" };
-    const repository = {
-        findByUserAndVocabulary: async (_id: string, vocabularyId: string) => vocabularyId === "known" ? vocab : null,
-        updateReviewResult: async () => vocab,
-    } as unknown as IUserVocabularyRepository;
-    const review = new VocabularyReviewService(repository, {} as IVocabularyRepository, h.service, h.repository);
-    const empty = await review.submitReviewResults(h.user.id, [{ vocabularyId: "unknown", isCorrect: true }]);
-    assert.equal(empty.rewards, null);
-    assert.equal(h.writes(), 0);
-    const result = await review.submitReviewResults(h.user.id, [{ vocabularyId: "known", isCorrect: false }]);
-    assert.deepEqual(Object.keys(result).sort(), ["results", "rewards"]);
-    assert.deepEqual(result.rewards, { xpEarned: 5, totalXp: 95, level: 1, currentStreak: 1 });
-    assert.equal(h.user.stats.diamond, 20);
-    assert.equal(h.writes(), 1);
+test("adaptive review changes mastery once from objective answer quality", () => {
+    const failed = calculateAdaptiveReview(3, "FAIL", 1, now);
+    const good = calculateAdaptiveReview(3, "GOOD", 0, now);
+    const retry = calculateAdaptiveReview(3, "RETRY_CORRECT", 0, now);
+    assert.equal(failed.level, 2);
+    assert.equal(good.level, 4);
+    assert.equal(retry.level, 3);
+    assert.equal(failed.nextReviewAt.getTime(), now.getTime());
+    assert.ok(good.nextReviewAt > now);
 });
 
 test("conflicts retry a bounded number of times and never report an uncommitted reward", async () => {
