@@ -45,6 +45,7 @@ export const mapQuestionToResponse = (doc: QuestionDocument): QuestionResponse =
 
     return {
         id: doc._id.toString(),
+        topicId: doc.topicId ? doc.topicId.toString() : null,
         vocabularyId: doc.vocabularyId ? doc.vocabularyId.toString() : null,
         vocabularyIds,
         vocabularies,
@@ -86,6 +87,7 @@ export const mapQuestionToListItemResponse = (doc: QuestionDocument): QuestionLi
 
     return {
         id: doc._id.toString(),
+        topicId: doc.topicId ? doc.topicId.toString() : null,
         vocabularyId: doc.vocabularyId ? doc.vocabularyId.toString() : null,
         vocabularyIds,
         vocabularies,

@@ -10,6 +10,7 @@ import {
 } from "../../models/question.model.js";
 import type {
     QuestionListQuery,
+    QuestionScope,
     QuestionStatus,
 } from "../../types/question.types.js";
 import type {
@@ -35,24 +36,64 @@ export class QuestionRepository implements IQuestionRepository {
     public async findAll(
         query: QuestionListQuery,
     ): Promise<{ questions: QuestionDocument[]; total: number }> {
+        const unassignedCondition: Record<string, unknown> = {
+            $or: [{ topicId: { $exists: false } }, { topicId: null }],
+            vocabularyId: null,
+            $and: [
+                {
+                    $or: [
+                        { vocabularyIds: { $exists: false } },
+                        { vocabularyIds: null },
+                        { vocabularyIds: { $size: 0 } },
+                    ],
+                },
+                {
+                    "matchingPairs.vocabularyId": { $not: { $exists: true, $ne: null } },
+                },
+            ],
+        };
+
         const filter: Record<string, unknown> = {};
 
-        if (query.topicId) {
-            filter.topicId = query.topicId;
-        }
+        const scope: QuestionScope =
+            query.scope ?? (query.includeUnassigned === false ? "TOPIC_ONLY" : "ALL");
 
+        const topicOrVocabConditions: Array<Record<string, unknown>> = [];
+        if (query.topicId) {
+            topicOrVocabConditions.push({ topicId: query.topicId });
+        }
         if (query.vocabularyIds && query.vocabularyIds.length > 0) {
-            filter.$or = [
+            topicOrVocabConditions.push(
                 { vocabularyId: { $in: query.vocabularyIds } },
                 { vocabularyIds: { $in: query.vocabularyIds } },
                 { "matchingPairs.vocabularyId": { $in: query.vocabularyIds } },
-            ];
+            );
         } else if (query.vocabularyId) {
-            filter.$or = [
+            topicOrVocabConditions.push(
                 { vocabularyId: query.vocabularyId },
                 { vocabularyIds: query.vocabularyId },
                 { "matchingPairs.vocabularyId": query.vocabularyId },
-            ];
+            );
+        }
+
+        if (scope === "TOPIC_ONLY") {
+            if (topicOrVocabConditions.length > 0) {
+                filter.$or = topicOrVocabConditions;
+            } else {
+                filter.$or = [
+                    { topicId: { $exists: true, $ne: null } },
+                    { vocabularyId: { $exists: true, $ne: null } },
+                    { "vocabularyIds.0": { $exists: true } },
+                    { "matchingPairs.vocabularyId": { $exists: true, $ne: null } },
+                ];
+            }
+        } else if (scope === "UNASSIGNED_ONLY") {
+            filter.$or = [unassignedCondition];
+        } else {
+            // scope === "ALL"
+            if (topicOrVocabConditions.length > 0) {
+                filter.$or = [...topicOrVocabConditions, unassignedCondition];
+            }
         }
 
         if (query.type) {
@@ -308,7 +349,7 @@ export class QuestionRepository implements IQuestionRepository {
     public async findByIdsForAssignment(ids: string[]): Promise<QuestionDocument[]> {
         if (ids.length === 0) return [];
         return QuestionModel.find({ _id: { $in: ids } })
-            .select("vocabularyId vocabularyIds matchingPairs")
+            .select("topicId vocabularyId vocabularyIds matchingPairs")
             .exec();
     }
 

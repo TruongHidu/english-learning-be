@@ -77,24 +77,14 @@ export class AdminQuestionService {
         });
         const vocabularyIds = vocabularies.map((v) => v._id.toString());
 
-        if (vocabularyIds.length === 0) {
-            const { questions, total } = await this.questionRepository.findAll({
-                ...query,
-                topicId,
-            });
-            const page = query.page ?? 1;
-            const limit = query.limit ?? 20;
-            const totalPages = Math.ceil(total / limit) || 1;
-
-            return {
-                questions: questions.map(mapQuestionToListItemResponse),
-                pagination: { page, limit, total, totalPages },
-            };
-        }
+        const scope = query.scope ?? "ALL";
 
         const { questions, total } = await this.questionRepository.findAll({
             ...query,
+            topicId,
             vocabularyIds,
+            scope,
+            includeUnassigned: scope !== "TOPIC_ONLY",
         });
         const page = query.page ?? 1;
         const limit = query.limit ?? 20;
@@ -381,6 +371,18 @@ export class AdminQuestionService {
             );
         }
 
+        const lessonTopicId = lesson.topicId.toString();
+
+        for (const question of questions) {
+            if (question.topicId && question.topicId.toString() !== lessonTopicId) {
+                throw new AppError(
+                    "QUESTION_TOPIC_MISMATCH",
+                    "Không thể gán câu hỏi thuộc chủ đề khác vào bài học này",
+                    400,
+                );
+            }
+        }
+
         // Question currently derives its Topic from linked Vocabulary. Questions without
         // linked Vocabulary are intentionally treated as global question-bank records.
         const vocabularyIds = new Set<string>();
@@ -402,7 +404,6 @@ export class AdminQuestionService {
                     vocabulary.topicId.toString(),
                 ]),
             );
-            const lessonTopicId = lesson.topicId.toString();
             const hasTopicMismatch = Array.from(vocabularyIds).some(
                 (vocabularyId) => vocabularyTopicById.get(vocabularyId) !== lessonTopicId,
             );
