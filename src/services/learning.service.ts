@@ -1,6 +1,8 @@
 import mongoose, { Types } from "mongoose";
 
 import { AppError } from "../errors/app-error.js";
+import { normalizeTranslationAnswer } from "../utils/translation-answers.js";
+
 import { DiamondTransactionModel } from "../models/diamond-transaction.model.js";
 import { effectiveCurrentStreak } from "../utils/streak.js";
 import type { ITranslationEvaluator } from "../ai/interfaces/translation-evaluator.interface.js";
@@ -32,6 +34,11 @@ import type {
 import type { HeartService } from "./heart.service.js";
 import type { LearningProgressionService } from "./learning-progression.service.js";
 import type { UserStatsService } from "./user-stats.service.js";
+
+const recoverableAiCodes = new Set([
+    "AI_PROVIDER_RATE_LIMITED", "AI_PROVIDER_TIMEOUT", "AI_PROVIDER_ERROR",
+    "AI_PROVIDER_INVALID_RESPONSE", "AI_PROVIDER_NOT_CONFIGURED",
+]);
 
 export class LearningService {
     constructor(
@@ -164,6 +171,16 @@ export class LearningService {
             snapshot.matchingPairs,
         );
 
+        if (snapshot.type === "TRANSLATION") {
+            if (typeof snapshot.correctAnswer !== "string" || !snapshot.correctAnswer.trim()
+                || (snapshot.acceptedAnswers !== undefined && (!Array.isArray(snapshot.acceptedAnswers)
+                    || snapshot.acceptedAnswers.some((answer) => typeof answer !== "string")))) {
+                throw new AppError("INVALID_QUESTION_SNAPSHOT", "Dữ liệu chấm câu dịch không hợp lệ", 500);
+            }
+            isCorrect = this.checkTranslationAnswer(snapshot.correctAnswer, snapshot.acceptedAnswers, body.answer);
+        }
+        let gradingStatus: SubmitAnswerResponse["gradingStatus"] = "NORMAL";
+
         if (
             !isCorrect
             && snapshot.type === "TRANSLATION"
@@ -172,19 +189,26 @@ export class LearningService {
             && body.answer.trim().length > 0
             && this.translationEvaluator
         ) {
-            const evaluation = await this.translationEvaluator.evaluate({
-                referenceAnswer: snapshot.correctAnswer,
-                userAnswer: body.answer,
-            });
-            isCorrect = evaluation.semanticScore >= TRANSLATION_MIN_SCORE
-                && !evaluation.hasCriticalError;
+            try {
+                const evaluation = await this.translationEvaluator.evaluate({
+                    referenceAnswer: snapshot.correctAnswer,
+                    userAnswer: body.answer,
+                });
+                isCorrect = evaluation.semanticScore >= TRANSLATION_MIN_SCORE
+                    && !evaluation.hasCriticalError;
+            } catch (error: unknown) {
+                if (!(error instanceof AppError) || !recoverableAiCodes.has(error.code)) throw error;
+                gradingStatus = "AI_UNAVAILABLE_FALLBACK";
+            }
         }
 
+        const shouldDeductHeart = !isCorrect && gradingStatus === "NORMAL";
         const updatedSession = await this.learningSessionRepository.recordAnswer({
             sessionId,
             userId,
             questionId: body.questionId,
             isCorrect,
+            shouldDeductHeart,
         });
 
         if (!updatedSession) {
@@ -243,7 +267,7 @@ export class LearningService {
         }
 
         let nextHeartAt: Date | null = null;
-        if (!isCorrect) {
+        if (shouldDeductHeart) {
             const deductionResult = await this.heartService.deductHeart(userId);
             nextHeartAt = deductionResult.nextHeartAt;
         } else {
@@ -253,6 +277,8 @@ export class LearningService {
 
         return {
             isCorrect,
+            gradingStatus,
+            heartDeducted: shouldDeductHeart,
             isPassed,
             correctAnswer: isCorrect ? null : this.getCorrectAnswer(snapshot),
             explanation: snapshot.explanation ?? null,
@@ -331,6 +357,7 @@ export class LearningService {
             type: question.type,
             difficulty: question.difficulty,
             correctAnswer: question.correctAnswer,
+            ...(question.type === "TRANSLATION" && { acceptedAnswers: [...(question.acceptedAnswers ?? [])] }),
             options: options && options.length > 0 ? options : undefined,
             matchingPairs: matchingPairs && matchingPairs.length > 0 ? matchingPairs : undefined,
             vocabularyIds: vocabularyIds.length > 0 ? vocabularyIds : undefined,
@@ -564,6 +591,17 @@ export class LearningService {
             return optionId === userAnswer || option.content === userAnswer;
         });
         return selectedOption?.isCorrect === true;
+    }
+
+    private checkTranslationAnswer(
+        correctAnswer: unknown,
+        acceptedAnswers: string[] | undefined,
+        userAnswer: string | string[],
+    ): boolean {
+        if (typeof userAnswer !== "string") return false;
+        return [correctAnswer, ...(acceptedAnswers ?? [])].some((answer) =>
+            typeof answer === "string" && normalizeTranslationAnswer(answer).length > 0
+            && normalizeTranslationAnswer(answer) === normalizeTranslationAnswer(userAnswer));
     }
 
     private checkTextBased(correctAnswer: unknown, userAnswer: string | string[]): boolean {

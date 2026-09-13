@@ -34,3 +34,12 @@ export const TRANSLATION_MIN_SCORE = parseTranslationMinScore(
 export const TRANSLATION_TIMEOUT_MS = parseTranslationTimeoutMs(
     process.env.AI_TRANSLATION_TIMEOUT_MS,
 );
+
+export function parseTranslationRateLimitCooldownMs(value: string | undefined): number {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 60_000;
+}
+
+export const TRANSLATION_RATE_LIMIT_COOLDOWN_MS = parseTranslationRateLimitCooldownMs(
+    process.env.AI_TRANSLATION_RATE_LIMIT_COOLDOWN_MS,
+);

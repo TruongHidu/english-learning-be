@@ -52,6 +52,7 @@ export const mapQuestionToResponse = (doc: QuestionDocument): QuestionResponse =
         content: doc.content,
         instruction: doc.instruction ?? null,
         correctAnswer: doc.correctAnswer ?? null,
+        ...(doc.type === "TRANSLATION" && { acceptedAnswers: doc.acceptedAnswers ?? [] }),
         options,
         matchingPairs,
         explanation: doc.explanation ?? null,

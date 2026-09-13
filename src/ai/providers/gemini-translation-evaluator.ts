@@ -12,6 +12,8 @@ export interface GeminiTranslationEvaluatorOptions {
     modelName?: string;
     timeoutMs?: number;
     fetchImpl?: typeof fetch;
+    rateLimitCooldownMs?: number;
+    now?: () => number;
 }
 
 interface UnknownRecord {
@@ -29,6 +31,9 @@ export class GeminiTranslationEvaluator implements ITranslationEvaluator {
     private readonly modelName: string;
     private readonly timeoutMs: number;
     private readonly fetchImpl: typeof fetch;
+    private readonly rateLimitCooldownMs: number;
+    private readonly now: () => number;
+    private rateLimitedUntil = 0;
 
     constructor(options: GeminiTranslationEvaluatorOptions = {}) {
         this.apiKey = options.apiKey ?? process.env.GEMINI_API_KEY ?? "";
@@ -39,6 +44,9 @@ export class GeminiTranslationEvaluator implements ITranslationEvaluator {
             ? options.timeoutMs!
             : 5_000;
         this.fetchImpl = options.fetchImpl ?? fetch;
+        this.rateLimitCooldownMs = Number.isSafeInteger(options.rateLimitCooldownMs)
+            && (options.rateLimitCooldownMs ?? 0) > 0 ? options.rateLimitCooldownMs! : 60_000;
+        this.now = options.now ?? Date.now;
     }
 
     async evaluate(
@@ -59,6 +67,8 @@ export class GeminiTranslationEvaluator implements ITranslationEvaluator {
                 502,
             );
         }
+
+        if (this.now() < this.rateLimitedUntil) throw this.rateLimitError();
 
         const controller = new AbortController();
         let timedOut = false;
@@ -95,6 +105,10 @@ export class GeminiTranslationEvaluator implements ITranslationEvaluator {
 
             const responseText = await response.text();
             if (!response.ok) {
+                if (response.status === 429) {
+                    this.rateLimitedUntil = this.now() + this.rateLimitCooldownMs;
+                    throw this.rateLimitError();
+                }
                 throw new AppError(
                     "AI_PROVIDER_ERROR",
                     `AI provider trả về lỗi HTTP ${response.status}`,
@@ -121,6 +135,14 @@ export class GeminiTranslationEvaluator implements ITranslationEvaluator {
             clearTimeout(timeout);
             options?.signal?.removeEventListener("abort", abortFromCaller);
         }
+    }
+
+    private rateLimitError(): AppError {
+        return new AppError(
+            "AI_PROVIDER_RATE_LIMITED",
+            "Dịch vụ AI đã đạt giới hạn sử dụng. Vui lòng thử lại sau.",
+            429,
+        );
     }
 
     private buildSystemInstruction(): string {

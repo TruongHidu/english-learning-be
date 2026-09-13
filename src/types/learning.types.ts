@@ -73,6 +73,8 @@ export interface LessonCompletionRewards {
 
 export interface SubmitAnswerResponse {
     isCorrect: boolean;
+    gradingStatus: "NORMAL" | "AI_UNAVAILABLE_FALLBACK";
+    heartDeducted: boolean;
     isPassed: boolean;
     /** Chỉ trả về khi sai — để FE hiển thị đáp án đúng */
     correctAnswer: unknown | null;

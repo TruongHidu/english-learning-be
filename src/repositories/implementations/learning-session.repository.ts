@@ -50,7 +50,7 @@ export class LearningSessionRepository implements ILearningSessionRepository {
         const questionId = new Types.ObjectId(data.questionId);
         const correctIncrement = data.isCorrect ? 1 : 0;
         const wrongIncrement = data.isCorrect ? 0 : 1;
-        const heartDecrement = data.isCorrect ? 0 : 1;
+        const heartDecrement = !data.isCorrect && data.shouldDeductHeart ? 1 : 0;
         const now = new Date();
 
         const pipeline: UpdateWithAggregationPipeline = [

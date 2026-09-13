@@ -133,6 +133,7 @@ export class QuestionRepository implements IQuestionRepository {
             content: data.content.trim(),
             instruction: data.instruction?.trim() || undefined,
             correctAnswer: data.correctAnswer !== undefined ? data.correctAnswer : undefined,
+            acceptedAnswers: data.type === "TRANSLATION" ? data.acceptedAnswers ?? [] : undefined,
             options,
             matchingPairs,
             explanation: data.explanation?.trim() || undefined,
@@ -228,6 +229,11 @@ export class QuestionRepository implements IQuestionRepository {
                 ? new Types.ObjectId(data.topicId)
                 : existing.topicId;
             const resultingType = data.type ?? existing.type;
+            if (resultingType !== "TRANSLATION") {
+                unsetPayload.acceptedAnswers = 1;
+            } else if (data.acceptedAnswers !== undefined) {
+                updatePayload.acceptedAnswers = data.acceptedAnswers;
+            }
             const resultingContent = data.content ?? existing.content;
             if (resultingTopicId) {
                 updatePayload.topicId = resultingTopicId;

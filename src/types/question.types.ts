@@ -67,6 +67,7 @@ export interface QuestionResponse {
     content: string;
     instruction: string | null;
     correctAnswer: unknown | null;
+    acceptedAnswers?: string[];
     options: QuestionOptionResponse[] | null;
     matchingPairs: MatchingPairResponse[] | null;
     explanation: string | null;
@@ -101,6 +102,7 @@ export interface CreateQuestionInput {
     content: string;
     instruction?: string | null;
     correctAnswer?: unknown | null;
+    acceptedAnswers?: string[];
     options?: QuestionOptionInput[] | null;
     matchingPairs?: MatchingPairInput[] | null;
     explanation?: string | null;
@@ -116,6 +118,7 @@ export interface UpdateQuestionInput {
     content?: string;
     instruction?: string | null;
     correctAnswer?: unknown | null;
+    acceptedAnswers?: string[];
     options?: QuestionOptionInput[] | null;
     matchingPairs?: MatchingPairInput[] | null;
     explanation?: string | null;

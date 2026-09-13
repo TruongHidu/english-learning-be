@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { acceptedAnswersSchema } from "../utils/translation-answers.js";
 
 import { QUESTION_STATUSES, QUESTION_TYPES } from "../types/question.types.js";
 import { VOCABULARY_DIFFICULTIES } from "../types/vocabulary.types.js";
@@ -61,6 +62,7 @@ export const createQuestionSchema = z
             .max(2000, "Nội dung câu hỏi không được vượt quá 2000 ký tự"),
         instruction: z.string().trim().max(500, "Hướng dẫn không được vượt quá 500 ký tự").optional().nullable(),
         correctAnswer: z.unknown().optional().nullable(),
+        acceptedAnswers: acceptedAnswersSchema.optional(),
         options: z.array(optionInputSchema).optional().nullable(),
         matchingPairs: z.array(matchingPairInputSchema).optional().nullable(),
         explanation: z.string().trim().max(2000, "Giải thích không được vượt quá 2000 ký tự").optional().nullable(),
@@ -119,6 +121,7 @@ export const updateQuestionSchema = z
         content: z.string().trim().min(1, "Nội dung câu hỏi không được để trống").max(2000, "Nội dung câu hỏi không được vượt quá 2000 ký tự").optional(),
         instruction: z.string().trim().max(500, "Hướng dẫn không được vượt quá 500 ký tự").optional().nullable(),
         correctAnswer: z.unknown().optional().nullable(),
+        acceptedAnswers: acceptedAnswersSchema.optional(),
         options: z.array(optionInputSchema).optional().nullable(),
         matchingPairs: z.array(matchingPairInputSchema).optional().nullable(),
         explanation: z.string().trim().max(2000, "Giải thích không được vượt quá 2000 ký tự").optional().nullable(),

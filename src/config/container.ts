@@ -54,6 +54,7 @@ import { GeminiTranslationEvaluator } from "../ai/providers/gemini-translation-e
 import {
     TRANSLATION_GRADING_ENABLED,
     TRANSLATION_TIMEOUT_MS,
+    TRANSLATION_RATE_LIMIT_COOLDOWN_MS,
 } from "./translation-grading.config.js";
 import { CloudinaryMediaStorage } from "../storage/cloudinary-media-storage.js";
 import { DiamondTransactionRepository } from "../repositories/implementations/diamond-transaction.repository.js";
@@ -102,6 +103,7 @@ const translationEvaluator = TRANSLATION_GRADING_ENABLED
           apiKey: process.env.GEMINI_API_KEY,
           modelName: process.env.AI_MODEL || "gemini-2.0-flash",
           timeoutMs: TRANSLATION_TIMEOUT_MS,
+          rateLimitCooldownMs: TRANSLATION_RATE_LIMIT_COOLDOWN_MS,
       })
     : undefined;
 

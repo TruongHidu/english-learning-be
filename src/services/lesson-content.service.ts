@@ -10,6 +10,8 @@ export function contentFingerprint(requiredScore: number, questions: QuestionPer
         id: (q as QuestionPersistence & { _id?: unknown })._id,
         type: q.type, content: q.content, instruction: q.instruction ?? null,
         correctAnswer: q.correctAnswer ?? null, explanation: q.explanation ?? null,
+        ...(q.type === "TRANSLATION" && q.acceptedAnswers?.length
+            ? { acceptedAnswers: q.acceptedAnswers } : {}),
         audioUrl: q.audioUrl ?? null, imageUrl: q.imageUrl ?? null,
         vocabularyId: q.vocabularyId ?? null, vocabularyIds: q.vocabularyIds ?? [],
         options: q.options?.map(o => ({ content: o.content, imageUrl: o.imageUrl ?? null, isCorrect: o.isCorrect, orderIndex: o.orderIndex })) ?? [],

@@ -95,6 +95,13 @@ export class GeminiContentGenerator implements IAiContentGenerator {
 
             const responseText = await response.text();
             if (!response.ok) {
+                if (response.status === 429) {
+                    throw new AppError(
+                        "AI_PROVIDER_RATE_LIMITED",
+                        "Dịch vụ AI đã đạt giới hạn sử dụng. Vui lòng thử lại sau.",
+                        429,
+                    );
+                }
                 throw new AppError(
                     "AI_PROVIDER_ERROR",
                     `AI provider trả về lỗi HTTP ${response.status}`,

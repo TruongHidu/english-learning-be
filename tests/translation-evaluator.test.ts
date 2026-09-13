@@ -6,6 +6,7 @@ import {
     parseTranslationGradingEnabled,
     parseTranslationMinScore,
     parseTranslationTimeoutMs,
+    parseTranslationRateLimitCooldownMs,
 } from "../src/config/translation-grading.config.js";
 import { AppError } from "../src/errors/app-error.js";
 
@@ -42,6 +43,9 @@ test("translation grading configuration uses safe defaults for invalid values", 
     assert.equal(parseTranslationTimeoutMs("2500.5"), 5_000);
     assert.equal(parseTranslationTimeoutMs("999999999"), 5_000);
     assert.equal(parseTranslationTimeoutMs("invalid"), 5_000);
+    assert.equal(parseTranslationRateLimitCooldownMs(undefined), 60_000);
+    assert.equal(parseTranslationRateLimitCooldownMs("-1"), 60_000);
+    assert.equal(parseTranslationRateLimitCooldownMs("1000"), 1_000);
 });
 
 test("translation evaluation schema is strict and bounded", () => {
@@ -129,7 +133,7 @@ test("missing API key fails before any network call", async () => {
 test("provider HTTP errors and network failures use the existing AppError envelope", async () => {
     const httpEvaluator = new GeminiTranslationEvaluator({
         apiKey: "test-key",
-        fetchImpl: (async () => new Response("rate limited", { status: 429 })) as typeof fetch,
+        fetchImpl: (async () => new Response("private HTTP failure", { status: 500 })) as typeof fetch,
     });
     await expectAppError(
         () => httpEvaluator.evaluate({ referenceAnswer: "Hello", userAnswer: "Hi" }),
@@ -171,6 +175,34 @@ test("invalid Gemini JSON or evaluation schema is rejected", async () => {
             502,
         );
     }
+});
+
+test("429 is safe, suppresses requests during cooldown and retries after expiry", async () => {
+    let now = 100;
+    let calls = 0;
+    const evaluator = new GeminiTranslationEvaluator({
+        apiKey: "test-key", now: () => now, rateLimitCooldownMs: 1000,
+        fetchImpl: async () => {
+            calls++;
+            if (calls === 1) return new Response("private quota details", { status: 429 });
+            return successfulGeminiResponse({ semanticScore: 1, hasCriticalError: false, errorTypes: [], reason: "Equivalent" });
+        },
+    });
+    const evaluate = () => evaluator.evaluate({ referenceAnswer: "Hello", userAnswer: "Hi" });
+    for (const instant of [100, 1099]) {
+        now = instant;
+        await assert.rejects(evaluate(), (error: unknown) => {
+            assert.ok(error instanceof AppError);
+            assert.equal(error.code, "AI_PROVIDER_RATE_LIMITED");
+            assert.equal(error.statusCode, 429);
+            assert.equal(error.message, "Dịch vụ AI đã đạt giới hạn sử dụng. Vui lòng thử lại sau.");
+            return true;
+        });
+    }
+    assert.equal(calls, 1);
+    now = 1100;
+    assert.equal((await evaluate()).semanticScore, 1);
+    assert.equal(calls, 2);
 });
 
 test("blocked, empty, or unfinished Gemini candidates are rejected", async () => {
