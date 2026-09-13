@@ -1,4 +1,5 @@
 import { Schema, model, type HydratedDocument, type Types } from "mongoose";
+import { acceptedAnswersSchema } from "../utils/translation-answers.js";
 
 import {
     QUESTION_STATUSES,
@@ -35,6 +36,7 @@ export interface QuestionPersistence {
     content: string;
     instruction?: string;
     correctAnswer?: unknown;
+    acceptedAnswers?: string[];
     options?: QuestionOptionPersistence[];
     matchingPairs?: MatchingPairPersistence[];
     explanation?: string;
@@ -114,6 +116,7 @@ const questionSchema = new Schema<QuestionPersistence>(
             type: Schema.Types.Mixed,
             required: false,
         },
+        acceptedAnswers: { type: [String], default: undefined },
         options: {
             type: [questionOptionSchema],
             required: false,
@@ -192,6 +195,12 @@ const questionSchema = new Schema<QuestionPersistence>(
 );
 
 questionSchema.pre("validate", function normalizeContentBeforeValidation() {
+    if (this.type !== "TRANSLATION") this.acceptedAnswers = undefined;
+    else {
+        const parsed = acceptedAnswersSchema.safeParse(this.acceptedAnswers ?? []);
+        if (parsed.success) this.acceptedAnswers = parsed.data;
+        else this.invalidate("acceptedAnswers", "Danh sách đáp án dịch không hợp lệ");
+    }
     if (!this.topicId || !this.type || !this.content) return;
     this.normalizedContent = normalizeQuestionContent(this.content);
     this.dedupeKey = buildQuestionDedupeKey(

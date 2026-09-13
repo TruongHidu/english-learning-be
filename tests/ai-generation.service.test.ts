@@ -472,6 +472,7 @@ class InMemoryAiQuestionCommitRepository implements IAiQuestionCommitRepository 
                         content: candidate.content,
                         instruction: candidate.instruction,
                         ...("correctAnswer" in candidate && { correctAnswer: candidate.correctAnswer }),
+                        ...(candidate.type === "TRANSLATION" && { acceptedAnswers: candidate.acceptedAnswers ?? [] }),
                         ...( "options" in candidate && { options: candidate.options }),
                         ...( "matchingPairs" in candidate && { matchingPairs: candidate.matchingPairs }),
                         explanation: candidate.explanation,
@@ -1191,9 +1192,24 @@ test("question commit persists a TRANSLATION candidate as DRAFT", async () => {
     assert.equal(result.committedCount, 1);
     assert.equal(result.questions[0]?.type, "TRANSLATION");
     assert.equal(result.questions[0]?.correctAnswer, validTranslation.correctAnswer);
+    assert.deepEqual(result.questions[0]?.acceptedAnswers, []);
     assert.equal(result.questions[0]?.status, "DRAFT");
     assert.equal(result.questions[0]?.options, null);
     assert.equal(result.questions[0]?.matchingPairs, null);
+});
+
+test("admin-approved translation alternatives survive preview commit and validation", async () => {
+    const harness = makeHarness(new FakeAiContentGenerator({ questions: [validTranslation] }),
+        { seedVocabularies: [makeVocabularyDocument("harbor", { id: VOCAB_ID })] });
+    const preview = await harness.service.generateQuestionPreview(ADMIN_ID, TOPIC_ID.toString(), {
+        vocabularyIds: [VOCAB_ID.toString()], questionTypes: ["TRANSLATION"], count: 1, difficulty: "EASY",
+    });
+    const candidate = preview.candidates[0]!;
+    assert.equal(candidate.type, "TRANSLATION");
+    const result = await harness.service.commitQuestionGeneration(ADMIN_ID, preview.generationId, {
+        items: [{ ...candidate, acceptedAnswers: [" Chào bạn ", "chào   BẠN", ""] }],
+    });
+    assert.deepEqual(result.questions[0]?.acceptedAnswers, ["Chào bạn"]);
 });
 
 test("question commit is idempotent and concurrent calls create one Question", async () => {
@@ -1442,6 +1458,48 @@ test("question provider timeout marks Question AIGeneration FAILED", async () =>
         (error: unknown) => error instanceof AppError && error.code === "AI_PROVIDER_TIMEOUT",
     );
     assert.equal(harness.generationRepository.generation?.status, "FAILED");
+});
+
+test("question rate limit preserves 429 and stores a safe FAILED generation", async () => {
+    const harness = makeHarness(
+        new FakeAiContentGenerator({
+            error: new AppError("AI_PROVIDER_RATE_LIMITED", "private provider response", 429),
+        }),
+        { seedVocabularies: [makeVocabularyDocument("harbor", { id: VOCAB_ID })] },
+    );
+    const safeMessage = "Dịch vụ AI đã đạt giới hạn sử dụng. Vui lòng thử lại sau.";
+    await assert.rejects(generateQuestionPreview(harness), (error: unknown) => {
+        assert.ok(error instanceof AppError);
+        assert.equal(error.code, "AI_PROVIDER_RATE_LIMITED");
+        assert.equal(error.statusCode, 429);
+        assert.equal(error.message, safeMessage);
+        return true;
+    });
+    const generation = harness.generationRepository.generation;
+    assert.equal(generation?.status, "FAILED");
+    assert.equal(generation?.errorCode, "AI_PROVIDER_RATE_LIMITED");
+    assert.equal(generation?.errorMessage, safeMessage);
+});
+
+test("Gemini maps 429 safely and preserves other HTTP errors", async () => {
+    for (const status of [429, 403, 500]) {
+        const provider = new GeminiContentGenerator({
+            apiKey: "test-key",
+            fetchImpl: async () => new Response("private non-JSON provider response", { status }),
+        });
+        await assert.rejects(
+            provider.generateVocabularies({ topicName: "Travel", level: "B1", quantity: 1, excludeWords: [] }),
+            (error: unknown) => {
+                assert.ok(error instanceof AppError);
+                assert.equal(error.code, status === 429 ? "AI_PROVIDER_RATE_LIMITED" : "AI_PROVIDER_ERROR");
+                assert.equal(error.statusCode, status === 429 ? 429 : 502);
+                assert.equal(error.message, status === 429
+                    ? "Dịch vụ AI đã đạt giới hạn sử dụng. Vui lòng thử lại sau."
+                    : `AI provider trả về lỗi HTTP ${status}`);
+                return true;
+            },
+        );
+    }
 });
 
 test("Gemini question prompt allows requested TRANSLATION output", async () => {

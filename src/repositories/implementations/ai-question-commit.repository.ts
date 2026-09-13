@@ -186,6 +186,7 @@ export class AiQuestionCommitRepository implements IAiQuestionCommitRepository {
             type: candidate.type,
             content: candidate.content,
             instruction: candidate.instruction,
+            ...(candidate.type === "TRANSLATION" && { acceptedAnswers: candidate.acceptedAnswers ?? [] }),
             ...("correctAnswer" in candidate && { correctAnswer: candidate.correctAnswer }),
             options,
             matchingPairs,

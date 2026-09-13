@@ -813,6 +813,7 @@ export class AiGenerationService {
             const safeMessages: Record<string, string> = {
                 AI_PROVIDER_NOT_CONFIGURED: "AI provider chưa được cấu hình API key",
                 AI_PROVIDER_TIMEOUT: "AI provider phản hồi quá thời gian cho phép",
+                AI_PROVIDER_RATE_LIMITED: "Dịch vụ AI đã đạt giới hạn sử dụng. Vui lòng thử lại sau.",
                 AI_PROVIDER_ERROR: "Không thể kết nối AI provider",
                 AI_PROVIDER_INVALID_RESPONSE: "AI provider trả về dữ liệu không hợp lệ",
                 AI_OUTPUT_INVALID: "AI output không đúng schema",

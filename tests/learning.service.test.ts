@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { Types } from "mongoose";
 
 import { AppError } from "../src/errors/app-error.js";
+import { mapLearningQuestionToResponse } from "../src/mappers/learning.mapper.js";
 import type {
     LearningQuestionSnapshot,
     LearningSessionDocument,
@@ -157,7 +158,8 @@ class InMemorySessionRepository implements ILearningSessionRepository {
         if (data.isCorrect) this.session.correctCount += 1;
         else {
             this.session.wrongCount += 1;
-            this.session.heartRemaining = Math.max(0, this.session.heartRemaining - 1);
+            this.session.wrongQuestionIds = [...(this.session.wrongQuestionIds ?? []), new Types.ObjectId(data.questionId)];
+            if (data.shouldDeductHeart) this.session.heartRemaining = Math.max(0, this.session.heartRemaining - 1);
         }
         this.session.score = Math.round((this.session.correctCount / this.session.totalQuestions) * 100);
 
@@ -311,7 +313,8 @@ const makeHarness = async (options?: {
         },
         deductHeart: async () => {
             heartCalls.deduct += 1;
-            return { user, heartsRemaining: Math.max(0, user.stats.currentHeart - 1), nextHeartAt: null };
+            user.stats.currentHeart = Math.max(0, user.stats.currentHeart - 1);
+            return { user, heartsRemaining: user.stats.currentHeart, nextHeartAt: null };
         },
     } as unknown as HeartService;
     const userRepository = {
@@ -480,6 +483,7 @@ test("a score equal to requiredScore passes and unlocks the next lesson", async 
     ].sort());
     assert.deepEqual(Object.keys(response).sort(), [
         "isCorrect", "isPassed", "correctAnswer", "explanation", "heartsRemaining", "nextHeartAt", "sessionStatus", "correctCount", "wrongCount", "score", "rewards",
+        "gradingStatus", "heartDeducted",
     ].sort());
     assert.equal(harness.progressRepository.completedCalls, 1);
     assert.deepEqual(harness.progressRepository.unlockedLessonIds, [nextLesson.id.toString()]);
@@ -584,6 +588,7 @@ test("AI accepts a semantically equivalent TRANSLATION and preserves the respons
     assert.deepEqual(Object.keys(response).sort(), [
         "isCorrect", "isPassed", "correctAnswer", "explanation", "heartsRemaining", "nextHeartAt",
         "sessionStatus", "correctCount", "wrongCount", "score", "rewards",
+        "gradingStatus", "heartDeducted",
     ].sort());
     assert.equal("semanticScore" in response, false);
     assert.equal("reason" in response, false);
@@ -640,6 +645,8 @@ test("TRANSLATION grading stays exact-only when no evaluator is configured", asy
     });
 
     assert.equal(response.isCorrect, false);
+    assert.equal(response.gradingStatus, "NORMAL");
+    assert.equal(response.heartDeducted, true);
     assert.equal(harness.heartCalls.deduct, 1);
 });
 
@@ -657,10 +664,13 @@ test("non-TRANSLATION question types never call the translation evaluator", asyn
     assert.equal(calls.length, 0);
 });
 
-test("translation provider errors leave the session, hearts and rewards untouched", async () => {
+test("translation provider failures record wrong answers without deducting hearts", async () => {
     for (const providerError of [
         new AppError("AI_PROVIDER_TIMEOUT", "Timed out", 504),
         new AppError("AI_PROVIDER_INVALID_RESPONSE", "Invalid response", 502),
+        new AppError("AI_PROVIDER_RATE_LIMITED", "Private quota detail", 429),
+        new AppError("AI_PROVIDER_ERROR", "Network failure", 502),
+        new AppError("AI_PROVIDER_NOT_CONFIGURED", "Not configured", 503),
     ]) {
         const calls: Array<{ referenceAnswer: string; userAnswer: string }> = [];
         const question = makeTranslationQuestion();
@@ -671,25 +681,115 @@ test("translation provider errors leave the session, hearts and rewards untouche
         });
         const sessionId = harness.sessionRepository.session!._id.toString();
         const initialHeartSyncCalls = harness.heartCalls.sync;
+        const initialHearts = harness.user.stats.currentHeart;
 
-        await expectCode(() => harness.service.submitAnswer(USER_ID, sessionId, {
+        const response = await harness.service.submitAnswer(USER_ID, sessionId, {
             questionId: question._id.toString(),
             answer: "A different but potentially valid answer",
-        }), providerError.code);
+        });
+        assert.equal(response.isCorrect, false);
+        assert.equal(response.gradingStatus, "AI_UNAVAILABLE_FALLBACK");
+        assert.equal(response.heartDeducted, false);
+        assert.equal(response.heartsRemaining, initialHearts);
+        assert.equal(harness.user.stats.currentHeart, initialHearts);
+        assert.equal(response.correctAnswer, question.correctAnswer);
+        assert.equal(response.score, 0);
 
         assert.equal(calls.length, 1);
-        assert.equal(harness.sessionRepository.recordAnswerCalls, 0);
-        assert.deepEqual(harness.sessionRepository.session?.answeredQuestionIds, []);
+        assert.equal(harness.sessionRepository.recordAnswerCalls, 1);
+        assert.deepEqual(harness.sessionRepository.session?.answeredQuestionIds, [question._id]);
+        assert.deepEqual(harness.sessionRepository.session?.wrongQuestionIds, [question._id]);
         assert.equal(harness.sessionRepository.session?.correctCount, 0);
-        assert.equal(harness.sessionRepository.session?.wrongCount, 0);
-        assert.equal(harness.sessionRepository.session?.status, "IN_PROGRESS");
+        assert.equal(harness.sessionRepository.session?.wrongCount, 1);
+        assert.equal(harness.sessionRepository.session?.status, "FAILED");
         assert.equal(harness.progressRepository.completedCalls, 0);
-        assert.equal(harness.progressRepository.failedCalls, 0);
+        assert.equal(harness.progressRepository.failedCalls, 1);
         assert.deepEqual(harness.progressRepository.unlockedLessonIds, []);
         assert.equal(harness.heartCalls.deduct, 0);
-        assert.equal(harness.heartCalls.sync, initialHeartSyncCalls);
+        assert.equal(harness.heartCalls.sync, initialHeartSyncCalls + 1);
         assert.equal(harness.user.stats.totalXp, 0);
         assert.equal(harness.user.stats.diamond, 0);
         assert.equal(harness.user.stats.currentStreak, 0);
     }
+});
+
+test("accepted translations are snapshotted, normalized and never exposed or sent to AI", async () => {
+    const question = makeTranslationQuestion();
+    question.acceptedAnswers = ["I normally take the bus to school."];
+    const calls: Array<{ referenceAnswer: string; userAnswer: string }> = [];
+    const harness = await makeHarness({ questions: [question], translationEvaluator:
+        fakeTranslationEvaluator(new AppError("AI_PROVIDER_RATE_LIMITED", "Cooldown", 429), calls) });
+    question.acceptedAnswers[0] = "Changed after session started";
+    const publicQuestion = mapLearningQuestionToResponse(question);
+    assert.equal("acceptedAnswers" in publicQuestion, false);
+    assert.equal("correctAnswer" in publicQuestion, false);
+    const response = await harness.service.submitAnswer(USER_ID, harness.sessionRepository.session!._id.toString(), {
+        questionId: question._id.toString(), answer: "  I NORMALLY   take the bus to school.  ",
+    });
+    assert.equal(response.isCorrect, true);
+    assert.equal(response.gradingStatus, "NORMAL");
+    assert.equal(response.heartDeducted, false);
+    assert.equal(calls.length, 0);
+});
+
+test("approved alternatives work with AI disabled and invalid snapshots are not fallback answers", async () => {
+    const question = makeTranslationQuestion();
+    question.acceptedAnswers = ["I normally take the bus to school."];
+    const harness = await makeHarness({ questions: [question] });
+    const sessionId = harness.sessionRepository.session!._id.toString();
+    harness.sessionRepository.session!.questionSnapshots![0]!.correctAnswer = null;
+    await expectCode(() => harness.service.submitAnswer(USER_ID, sessionId, {
+        questionId: question._id.toString(), answer: "Different",
+    }), "INVALID_QUESTION_SNAPSHOT");
+    assert.equal(harness.sessionRepository.recordAnswerCalls, 0);
+    harness.sessionRepository.session!.questionSnapshots![0]!.correctAnswer = question.correctAnswer;
+    const response = await harness.service.submitAnswer(USER_ID, sessionId, {
+        questionId: question._id.toString(), answer: "I normally take the bus to school.",
+    });
+    assert.equal(response.isCorrect, true);
+    assert.equal(response.heartDeducted, false);
+    assert.equal(response.gradingStatus, "NORMAL");
+});
+
+test("fallback submission is counted once under concurrency and can still pass the lesson", async () => {
+    const question = makeTranslationQuestion();
+    const next = makeTranslationQuestion("Hello");
+    const harness = await makeHarness({ questions: [question, next], requiredScore: 50, translationEvaluator:
+        fakeTranslationEvaluator(new AppError("AI_PROVIDER_RATE_LIMITED", "Quota", 429), []) });
+    const sessionId = harness.sessionRepository.session!._id.toString();
+    const submit = () => harness.service.submitAnswer(USER_ID, sessionId, {
+        questionId: question._id.toString(), answer: "Different answer",
+    });
+    const results = await Promise.allSettled([submit(), submit()]);
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    assert.equal(harness.sessionRepository.session?.wrongCount, 1);
+    assert.equal(harness.sessionRepository.session?.status, "IN_PROGRESS");
+    assert.equal(harness.heartCalls.deduct, 0);
+    const response = await harness.service.submitAnswer(USER_ID, sessionId, {
+        questionId: next._id.toString(), answer: "Hello",
+    });
+    assert.equal(response.score, 50);
+    assert.equal(response.isPassed, true);
+    assert.equal(response.sessionStatus, "COMPLETED");
+});
+
+test("unknown AI errors and repository failures propagate without fallback", async () => {
+    for (const error of [new Error("Programming failure"), new AppError("OTHER_ERROR", "Other failure", 500)]) {
+        const question = makeTranslationQuestion();
+        const harness = await makeHarness({ questions: [question], translationEvaluator: {
+            evaluate: async () => { throw error; },
+        } });
+        await assert.rejects(harness.service.submitAnswer(USER_ID, harness.sessionRepository.session!._id.toString(), {
+            questionId: question._id.toString(), answer: "Different answer",
+        }), (actual) => actual === error);
+        assert.equal(harness.sessionRepository.recordAnswerCalls, 0);
+        assert.equal(harness.heartCalls.deduct, 0);
+    }
+    const question = makeTranslationQuestion();
+    const harness = await makeHarness({ questions: [question] });
+    const databaseError = new Error("Database unavailable");
+    harness.sessionRepository.recordAnswer = async () => { throw databaseError; };
+    await assert.rejects(harness.service.submitAnswer(USER_ID, harness.sessionRepository.session!._id.toString(), {
+        questionId: question._id.toString(), answer: String(question.correctAnswer),
+    }), (error) => error === databaseError);
 });

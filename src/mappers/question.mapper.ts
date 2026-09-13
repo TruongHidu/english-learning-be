@@ -45,6 +45,7 @@ export const mapQuestionToResponse = (doc: QuestionDocument): QuestionResponse =
 
     return {
         id: doc._id.toString(),
+        topicId: doc.topicId ? doc.topicId.toString() : null,
         vocabularyId: doc.vocabularyId ? doc.vocabularyId.toString() : null,
         vocabularyIds,
         vocabularies,
@@ -52,6 +53,7 @@ export const mapQuestionToResponse = (doc: QuestionDocument): QuestionResponse =
         content: doc.content,
         instruction: doc.instruction ?? null,
         correctAnswer: doc.correctAnswer ?? null,
+        ...(doc.type === "TRANSLATION" && { acceptedAnswers: doc.acceptedAnswers ?? [] }),
         options,
         matchingPairs,
         explanation: doc.explanation ?? null,
@@ -85,6 +87,7 @@ export const mapQuestionToListItemResponse = (doc: QuestionDocument): QuestionLi
 
     return {
         id: doc._id.toString(),
+        topicId: doc.topicId ? doc.topicId.toString() : null,
         vocabularyId: doc.vocabularyId ? doc.vocabularyId.toString() : null,
         vocabularyIds,
         vocabularies,

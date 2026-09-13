@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { acceptedAnswersSchema } from "../../utils/translation-answers.js";
 
 const requiredText = (max: number) => z.string().trim().min(1).max(max);
 const optionalText = (max: number) => requiredText(max).optional();
@@ -282,7 +283,7 @@ export const questionPreviewCandidateSchema = z.discriminatedUnion("type", [
     z.object({ ...matchingShape, ...previewQuestionFields }).strict().superRefine(refineMatching),
     z.object({ ...fillBlankShape, ...previewQuestionFields }).strict().superRefine(refineFillBlank),
     z.object({ ...orderSentenceShape, ...previewQuestionFields }).strict().superRefine(refineOrderSentence),
-    z.object({ ...translationShape, ...previewQuestionFields }).strict(),
+    z.object({ ...translationShape, ...previewQuestionFields, acceptedAnswers: acceptedAnswersSchema.optional() }).strict(),
 ]);
 
 export const questionPreviewCandidatesSchema = z

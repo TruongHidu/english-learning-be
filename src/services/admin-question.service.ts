@@ -1,4 +1,5 @@
 import { AppError } from "../errors/app-error.js";
+import { acceptedAnswersSchema } from "../utils/translation-answers.js";
 import { deferUntilCurriculumCommit } from "../utils/curriculum-transaction.js";
 import {
     mapQuestionToListItemResponse,
@@ -76,24 +77,14 @@ export class AdminQuestionService {
         });
         const vocabularyIds = vocabularies.map((v) => v._id.toString());
 
-        if (vocabularyIds.length === 0) {
-            const { questions, total } = await this.questionRepository.findAll({
-                ...query,
-                topicId,
-            });
-            const page = query.page ?? 1;
-            const limit = query.limit ?? 20;
-            const totalPages = Math.ceil(total / limit) || 1;
-
-            return {
-                questions: questions.map(mapQuestionToListItemResponse),
-                pagination: { page, limit, total, totalPages },
-            };
-        }
+        const scope = query.scope ?? "ALL";
 
         const { questions, total } = await this.questionRepository.findAll({
             ...query,
+            topicId,
             vocabularyIds,
+            scope,
+            includeUnassigned: scope !== "TOPIC_ONLY",
         });
         const page = query.page ?? 1;
         const limit = query.limit ?? 20;
@@ -123,6 +114,7 @@ export class AdminQuestionService {
         mediaFiles: QuestionMediaFiles = {},
     ): Promise<QuestionResponse> {
         const topicId = await this.resolveTopicIdForQuestionInput(input);
+        const acceptedAnswers = this.validateTranslationAnswers(input.type, input.correctAnswer, input.acceptedAnswers);
 
         this.ensureListeningHasAudio(
             input.type,
@@ -132,6 +124,7 @@ export class AdminQuestionService {
         const uploadedMedia = await this.uploadMediaFiles(mediaFiles);
         const createData: CreateQuestionData = {
             ...input,
+            acceptedAnswers,
             ...(topicId && { topicId }),
             ...(uploadedMedia.image && {
                 imageUrl: uploadedMedia.image.url,
@@ -178,6 +171,11 @@ export class AdminQuestionService {
             : existingQuestion.topicId?.toString();
 
         const resultingType = input.type ?? existingQuestion.type;
+        const acceptedAnswers = this.validateTranslationAnswers(
+            resultingType,
+            input.correctAnswer !== undefined ? input.correctAnswer : existingQuestion.correctAnswer,
+            input.acceptedAnswers ?? existingQuestion.acceptedAnswers,
+        );
         const resultingAudioUrl = mediaFiles.audio
             ? "pending-upload"
             : input.audioUrl !== undefined
@@ -188,6 +186,7 @@ export class AdminQuestionService {
         const uploadedMedia = await this.uploadMediaFiles(mediaFiles);
         const updateData: UpdateQuestionData = {
             ...input,
+            acceptedAnswers,
             ...(topicId && { topicId }),
         };
         const replacedMedia: Array<{ publicId: string; kind: MediaKind }> = [];
@@ -372,6 +371,18 @@ export class AdminQuestionService {
             );
         }
 
+        const lessonTopicId = lesson.topicId.toString();
+
+        for (const question of questions) {
+            if (question.topicId && question.topicId.toString() !== lessonTopicId) {
+                throw new AppError(
+                    "QUESTION_TOPIC_MISMATCH",
+                    "Không thể gán câu hỏi thuộc chủ đề khác vào bài học này",
+                    400,
+                );
+            }
+        }
+
         // Question currently derives its Topic from linked Vocabulary. Questions without
         // linked Vocabulary are intentionally treated as global question-bank records.
         const vocabularyIds = new Set<string>();
@@ -393,7 +404,6 @@ export class AdminQuestionService {
                     vocabulary.topicId.toString(),
                 ]),
             );
-            const lessonTopicId = lesson.topicId.toString();
             const hasTopicMismatch = Array.from(vocabularyIds).some(
                 (vocabularyId) => vocabularyTopicById.get(vocabularyId) !== lessonTopicId,
             );
@@ -520,6 +530,20 @@ export class AdminQuestionService {
         }
 
         await this.lessonQuestionRepository.reorder(lessonId, questionIds);
+    }
+
+    private validateTranslationAnswers(type: string, correctAnswer: unknown, answers: unknown): string[] | undefined {
+        if (type !== "TRANSLATION") return undefined;
+        if (typeof correctAnswer !== "string" || !correctAnswer.trim()) {
+            throw new AppError("VALIDATION_ERROR", "Đáp án đúng là bắt buộc", 400,
+                [{ field: "correctAnswer", message: "Đáp án đúng là bắt buộc" }]);
+        }
+        const parsed = acceptedAnswersSchema.safeParse(answers ?? []);
+        if (!parsed.success) {
+            const message = parsed.error.issues[0]?.message ?? "Danh sách đáp án dịch không hợp lệ";
+            throw new AppError("VALIDATION_ERROR", message, 400, [{ field: "acceptedAnswers", message }]);
+        }
+        return parsed.data;
     }
 
     private validatePublishReadiness(question: {

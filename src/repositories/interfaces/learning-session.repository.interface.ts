@@ -19,6 +19,7 @@ export interface RecordAnswerData {
     userId: string;
     questionId: string;
     isCorrect: boolean;
+    shouldDeductHeart: boolean;
 }
 
 export interface UpdateSessionAfterAnswerData {

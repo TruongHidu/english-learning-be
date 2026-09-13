@@ -124,6 +124,8 @@ function createFixture(questionTopicId = TOPIC_ID, lessonExists = true) {
             lessonQuestionRepository,
             mediaStorage,
         ),
+        questionRepository,
+        vocabularyRepository,
         assignments,
         question,
         vocabulary,
@@ -141,6 +143,120 @@ test("assign accepts a question in the lesson topic and is idempotent", async ()
     assert.equal(second.assignedCount, 0);
     assert.equal(second.skippedCount, 1);
     assert.equal(fixture.assignments.length, 1);
+});
+
+test("assign accepts a shared unassigned question with no vocabulary or topicId", async () => {
+    const fixture = createFixture();
+    const sharedQuestion = makeQuestion();
+    sharedQuestion._id = new Types.ObjectId();
+    sharedQuestion.topicId = undefined;
+    sharedQuestion.vocabularyId = undefined;
+    sharedQuestion.vocabularyIds = [];
+    sharedQuestion.matchingPairs = [];
+    fixture.questions.push(sharedQuestion);
+
+    const result = await fixture.service.assignQuestionsToLesson(LESSON_ID.toString(), [sharedQuestion._id.toString()]);
+    assert.equal(result.assignedCount, 1);
+    assert.equal(result.skippedCount, 0);
+    assert.equal(fixture.assignments.length, 1);
+});
+
+test("assign rejects a question whose topicId belongs to another Topic", async () => {
+    const fixture = createFixture();
+    const wrongTopicQuestion = makeQuestion();
+    wrongTopicQuestion._id = new Types.ObjectId();
+    wrongTopicQuestion.topicId = OTHER_TOPIC_ID;
+    wrongTopicQuestion.vocabularyId = undefined;
+    fixture.questions.push(wrongTopicQuestion);
+
+    await assert.rejects(
+        () => fixture.service.assignQuestionsToLesson(LESSON_ID.toString(), [wrongTopicQuestion._id.toString()]),
+        (error: unknown) => error instanceof AppError
+            && error.code === "QUESTION_TOPIC_MISMATCH"
+            && error.statusCode === 400,
+    );
+    assert.equal(fixture.assignments.length, 0);
+});
+
+test("getQuestionsByTopic forwards scope and computes includeUnassigned correctly", async () => {
+    const fixture = createFixture();
+    let capturedQuery: unknown;
+    (fixture.questionRepository as unknown as { findAll: (q: unknown) => Promise<unknown> }).findAll = async (q: unknown) => {
+        capturedQuery = q;
+        return { questions: [], total: 0 };
+    };
+    (fixture.vocabularyRepository as unknown as { findByTopicId: () => Promise<unknown> }).findByTopicId = async () => ({
+        vocabularies: [{ _id: VOCAB_ID }],
+    });
+
+    // Test 1: scope = TOPIC_ONLY
+    await fixture.service.getQuestionsByTopic(TOPIC_ID.toString(), { page: 1, limit: 10, scope: "TOPIC_ONLY" });
+    assert.deepEqual(capturedQuery, {
+        page: 1,
+        limit: 10,
+        scope: "TOPIC_ONLY",
+        topicId: TOPIC_ID.toString(),
+        vocabularyIds: [VOCAB_ID.toString()],
+        includeUnassigned: false,
+    });
+
+    // Test 2: scope = UNASSIGNED_ONLY
+    await fixture.service.getQuestionsByTopic(TOPIC_ID.toString(), { page: 1, limit: 10, scope: "UNASSIGNED_ONLY" });
+    assert.deepEqual(capturedQuery, {
+        page: 1,
+        limit: 10,
+        scope: "UNASSIGNED_ONLY",
+        topicId: TOPIC_ID.toString(),
+        vocabularyIds: [VOCAB_ID.toString()],
+        includeUnassigned: true,
+    });
+
+    // Test 3: scope = ALL
+    await fixture.service.getQuestionsByTopic(TOPIC_ID.toString(), { page: 1, limit: 10, scope: "ALL" });
+    assert.deepEqual(capturedQuery, {
+        page: 1,
+        limit: 10,
+        scope: "ALL",
+        topicId: TOPIC_ID.toString(),
+        vocabularyIds: [VOCAB_ID.toString()],
+        includeUnassigned: true,
+    });
+
+    // Test 4: scope = undefined defaults to ALL
+    await fixture.service.getQuestionsByTopic(TOPIC_ID.toString(), { page: 1, limit: 10 });
+    assert.deepEqual(capturedQuery, {
+        page: 1,
+        limit: 10,
+        scope: "ALL",
+        topicId: TOPIC_ID.toString(),
+        vocabularyIds: [VOCAB_ID.toString()],
+        includeUnassigned: true,
+    });
+
+    // Test 5: preserves other filters (search, type, difficulty, status, createdByAi)
+    await fixture.service.getQuestionsByTopic(TOPIC_ID.toString(), {
+        page: 2,
+        limit: 15,
+        search: "apple",
+        type: "MULTIPLE_CHOICE",
+        difficulty: "EASY",
+        status: "PUBLISHED",
+        createdByAi: true,
+        scope: "TOPIC_ONLY",
+    });
+    assert.deepEqual(capturedQuery, {
+        page: 2,
+        limit: 15,
+        search: "apple",
+        type: "MULTIPLE_CHOICE",
+        difficulty: "EASY",
+        status: "PUBLISHED",
+        createdByAi: true,
+        scope: "TOPIC_ONLY",
+        topicId: TOPIC_ID.toString(),
+        vocabularyIds: [VOCAB_ID.toString()],
+        includeUnassigned: false,
+    });
 });
 
 test("assign rejects a question whose Vocabulary belongs to another Topic", async () => {

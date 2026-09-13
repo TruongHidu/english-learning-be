@@ -60,6 +60,7 @@ export interface LinkedVocabularyItem {
 
 export interface QuestionResponse {
     id: string;
+    topicId?: string | null;
     vocabularyId: string | null;
     vocabularyIds: string[] | null;
     vocabularies?: LinkedVocabularyItem[] | null;
@@ -67,6 +68,7 @@ export interface QuestionResponse {
     content: string;
     instruction: string | null;
     correctAnswer: unknown | null;
+    acceptedAnswers?: string[];
     options: QuestionOptionResponse[] | null;
     matchingPairs: MatchingPairResponse[] | null;
     explanation: string | null;
@@ -82,6 +84,7 @@ export interface QuestionResponse {
 
 export interface QuestionListItemResponse {
     id: string;
+    topicId?: string | null;
     vocabularyId: string | null;
     vocabularyIds: string[] | null;
     vocabularies?: LinkedVocabularyItem[] | null;
@@ -101,6 +104,7 @@ export interface CreateQuestionInput {
     content: string;
     instruction?: string | null;
     correctAnswer?: unknown | null;
+    acceptedAnswers?: string[];
     options?: QuestionOptionInput[] | null;
     matchingPairs?: MatchingPairInput[] | null;
     explanation?: string | null;
@@ -116,6 +120,7 @@ export interface UpdateQuestionInput {
     content?: string;
     instruction?: string | null;
     correctAnswer?: unknown | null;
+    acceptedAnswers?: string[];
     options?: QuestionOptionInput[] | null;
     matchingPairs?: MatchingPairInput[] | null;
     explanation?: string | null;
@@ -125,13 +130,18 @@ export interface UpdateQuestionInput {
 }
 
 
+export const QUESTION_SCOPES = ["ALL", "TOPIC_ONLY", "UNASSIGNED_ONLY"] as const;
+export type QuestionScope = (typeof QUESTION_SCOPES)[number];
+
 export interface QuestionListQuery {
     page?: number;
     limit?: number;
     search?: string;
+    scope?: QuestionScope;
     topicId?: string;
     vocabularyId?: string;
     vocabularyIds?: string[];
+    includeUnassigned?: boolean;
     type?: QuestionType;
     difficulty?: VocabularyDifficulty;
     status?: QuestionStatus;

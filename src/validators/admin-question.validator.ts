@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { acceptedAnswersSchema } from "../utils/translation-answers.js";
 
-import { QUESTION_STATUSES, QUESTION_TYPES } from "../types/question.types.js";
+import { QUESTION_SCOPES, QUESTION_STATUSES, QUESTION_TYPES } from "../types/question.types.js";
 import { VOCABULARY_DIFFICULTIES } from "../types/vocabulary.types.js";
 
 const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
@@ -61,6 +62,7 @@ export const createQuestionSchema = z
             .max(2000, "Nội dung câu hỏi không được vượt quá 2000 ký tự"),
         instruction: z.string().trim().max(500, "Hướng dẫn không được vượt quá 500 ký tự").optional().nullable(),
         correctAnswer: z.unknown().optional().nullable(),
+        acceptedAnswers: acceptedAnswersSchema.optional(),
         options: z.array(optionInputSchema).optional().nullable(),
         matchingPairs: z.array(matchingPairInputSchema).optional().nullable(),
         explanation: z.string().trim().max(2000, "Giải thích không được vượt quá 2000 ký tự").optional().nullable(),
@@ -119,6 +121,7 @@ export const updateQuestionSchema = z
         content: z.string().trim().min(1, "Nội dung câu hỏi không được để trống").max(2000, "Nội dung câu hỏi không được vượt quá 2000 ký tự").optional(),
         instruction: z.string().trim().max(500, "Hướng dẫn không được vượt quá 500 ký tự").optional().nullable(),
         correctAnswer: z.unknown().optional().nullable(),
+        acceptedAnswers: acceptedAnswersSchema.optional(),
         options: z.array(optionInputSchema).optional().nullable(),
         matchingPairs: z.array(matchingPairInputSchema).optional().nullable(),
         explanation: z.string().trim().max(2000, "Giải thích không được vượt quá 2000 ký tự").optional().nullable(),
@@ -137,7 +140,8 @@ export const questionListQuerySchema = z.object({
     page: z.coerce.number().int().min(1).optional().default(1),
     limit: z.coerce.number().int().min(1).max(500).optional().default(20),
     search: z.string().optional(),
-
+    scope: z.enum(QUESTION_SCOPES, { error: "Phạm vi câu hỏi không hợp lệ" }).optional(),
+    includeUnassigned: z.coerce.boolean().optional(),
     topicId: z.string().regex(OBJECT_ID_REGEX, "ID chủ đề không hợp lệ").optional(),
     vocabularyId: z.string().regex(OBJECT_ID_REGEX, "ID từ vựng không hợp lệ").optional(),
     type: z.enum(QUESTION_TYPES).optional(),

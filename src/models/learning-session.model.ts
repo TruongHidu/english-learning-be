@@ -31,6 +31,7 @@ export interface LearningQuestionSnapshot {
     type: QuestionType;
     difficulty?: VocabularyDifficulty;
     correctAnswer?: unknown;
+    acceptedAnswers?: string[];
     options?: LearningQuestionSnapshotOption[];
     matchingPairs?: LearningQuestionSnapshotMatchingPair[];
     vocabularyIds?: Types.ObjectId[];
@@ -114,6 +115,7 @@ const learningSessionSchema = new Schema<LearningSessionPersistence>(
                             required: false,
                         },
                         correctAnswer: { type: Schema.Types.Mixed, required: false },
+                        acceptedAnswers: { type: [String], default: undefined },
                         options: {
                             type: [
                                 new Schema<LearningQuestionSnapshotOption>(
