@@ -7,9 +7,9 @@ export class JwtTokenService implements ITokenService {
     private readonly providedSecret?: string;
     private readonly expiresIn: SignOptions["expiresIn"];
 
-    constructor(secret?: string, expiresIn = process.env.JWT_EXPIRES_IN ?? "7d") {
+    constructor(secret?: string, expiresIn = process.env.JWT_EXPIRES_IN ?? "15m") {
         this.providedSecret = secret;
-        this.expiresIn = (expiresIn || "7d") as SignOptions["expiresIn"];
+        this.expiresIn = (expiresIn || "15m") as SignOptions["expiresIn"];
     }
 
     private get secret(): string {

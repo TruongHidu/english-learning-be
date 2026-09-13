@@ -4,6 +4,7 @@ import app from "./app.js";
 import { adminBootstrapService, paymentExpirationService } from "./config/container.js";
 import { connectDatabase } from "./config/database.js";
 import { PaymentTransactionModel } from "./models/payment-transaction.model.js";
+import { RefreshSessionModel } from "./models/refresh-session.model.js";
 
 const PORT = Number(process.env.PORT) || 5000;
 
@@ -13,6 +14,7 @@ const startServer = async (): Promise<void> => {
         // Do not accept checkouts before the one-pending constraint is ready.
         // Resolve legacy duplicates with migrate:payment-pending before starting.
         await PaymentTransactionModel.init();
+        await RefreshSessionModel.init();
         await adminBootstrapService.ensureDefaultAdmin();
         paymentExpirationService.start();
 

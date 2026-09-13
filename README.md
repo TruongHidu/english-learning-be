@@ -361,3 +361,44 @@ Việc gán không thay đổi trạng thái Question hoặc Lesson. Admin phả
 - `AI_PROVIDER_TIMEOUT`: provider AI phản hồi quá thời gian cấu hình.
 
 Không hạ cấp transaction xuống các thao tác rời rạc để sửa lỗi replica set, vì có thể tạo Vocabulary trùng khi hai request commit đồng thời.
+# Authentication sessions
+
+Login keeps the existing `{ success, message, data: { accessToken, user } }` response
+and sets the `lingofox.refresh` HttpOnly cookie. `POST /api/v1/auth/refresh` rotates
+that cookie and returns `{ success, message, data: { accessToken } }`.
+`POST /api/v1/auth/logout` revokes the cookie's entire session family and clears it;
+repeated logout calls are successful. Protected APIs continue to use Bearer JWTs.
+
+Configuration:
+- `JWT_EXPIRES_IN=15m`: change existing deployment values too; an old `7d` value still overrides the default.
+- `REFRESH_TOKEN_DAYS=30`: absolute session lifetime starting at login; rotation does not extend it.
+- `AUTH_COOKIE_SAME_SITE=lax`: accepts `lax`, `strict`, or `none`.
+- `AUTH_COOKIE_SECURE=false`: local HTTP only; production always forces Secure.
+- `NODE_ENV=production`: deploy over HTTPS.
+- `FRONTEND_URL=http://localhost:5173`: exact allowed frontend origin, without a trailing slash or wildcard.
+
+Login, refresh and logout require an `Origin` header matching `FRONTEND_URL`,
+including calls from Postman/curl. Browsers supply it automatically on cross-origin
+POST requests. CORS permits credentialed requests only from this origin.
+For genuinely cross-site deployments use `AUTH_COOKIE_SAME_SITE=none` and
+`AUTH_COOKIE_SECURE=true`; browser third-party-cookie restrictions can still block
+these cookies. Prefer same-site frontend/backend domains. Do not log Cookie or
+Set-Cookie headers. SSE currently carries the short-lived access token in its URL;
+redact its query string from proxy/access logs.
+
+Refresh sessions store only SHA-256 hashes. Consumed records remain until absolute
+expiry for reuse detection. Rotation and revocation use MongoDB transactions:
+MongoDB must run as a replica set (Atlas is suitable), not standalone. Ensure model
+indexes exist, including the unique tokenHash and expiresAt TTL indexes. Expiry is
+also checked in application code; it does not depend on the TTL deletion schedule.
+Reuse revokes the whole family. Password changes and account locks/bans revoke all
+refresh sessions. Existing access JWTs remain valid until their own expiry; this
+change does not add a JWT denylist or immediate revocation to protected APIs.
+
+Run `npm test` for unit/HTTP tests. For actual transaction/race tests, set
+`TEST_MONGOD_PATH` to a local mongod executable and run `npm run test:auth:integration`.
+It starts an isolated temporary replica set and removes its test data on completion;
+it never connects to the application's database.
+
+Deploy backend and frontend together. Legacy localStorage credentials are discarded,
+so existing users without a refresh cookie must log in once after upgrading.

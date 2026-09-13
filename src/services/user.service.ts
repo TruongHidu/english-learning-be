@@ -1,4 +1,5 @@
 import { AppError } from "../errors/app-error.js";
+import { RefreshSessionRepository } from "../repositories/implementations/refresh-session.repository.js";
 import { UserMapper } from "../mappers/user.mapper.js";
 import type { IUserRepository } from "../repositories/interfaces/user.repository.interface.js";
 import type { IPasswordHasher } from "../security/password-hasher.interface.js";
@@ -92,6 +93,7 @@ export class UserService {
 
         const newPasswordHash = await this.passwordHasher.hash(input.newPassword);
         await this.userRepository.updatePassword(userId, newPasswordHash);
+        await new RefreshSessionRepository().revokeUser(userId);
     }
 
     async getLearnedVocabularies(userId: string) {
