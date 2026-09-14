@@ -1,44 +1,89 @@
 import { Router } from "express";
-import { userVocabularyController, vocabularyReviewController, authenticate } from "../config/container.js";
-import { validate, validateQuery } from "../middlewares/validate.middleware.js";
+import {
+  authenticate,
+  userVocabularyController,
+  vocabularyReviewController,
+} from "../config/container.js";
+import {
+  validate,
+  validateParams,
+} from "../middlewares/validate.middleware.js";
 import { excludeReviewSchema } from "../validators/user-vocabulary.validator.js";
-import { reviewDueQuerySchema, reviewSubmitSchema } from "../validators/user-vocabulary-review.validator.js";
+import {
+  bookmarkReviewSchema,
+  createReviewSessionSchema,
+  exitReviewSessionSchema,
+  reviewBookmarkParamsSchema,
+  reviewGoalSchema,
+  reviewSessionParamsSchema,
+  submitReviewAnswerSchema,
+} from "../validators/user-vocabulary-review.validator.js";
 
 const router = Router();
-
-// LƯU TỪ ĐÃ HỌC
 router.get(
-    "/vocabularies/learned",
-    authenticate,
-    userVocabularyController.getLearned
+  "/vocabularies/learned",
+  authenticate,
+  userVocabularyController.getLearned,
 );
-
 router.patch(
-    "/vocabularies/:vocabularyId/exclude-review",
-    authenticate,
-    validate(excludeReviewSchema),
-    userVocabularyController.excludeFromReview
+  "/vocabularies/:vocabularyId/exclude-review",
+  authenticate,
+  validate(excludeReviewSchema),
+  userVocabularyController.excludeFromReview,
 );
-
-// ÔN TẬP TỪ VỰNG
 router.get(
-    "/vocabularies/review/session",
-    authenticate,
-    validateQuery(reviewDueQuerySchema),
-    vocabularyReviewController.getSession
+  "/vocabularies/review/dashboard",
+  authenticate,
+  vocabularyReviewController.dashboard,
 );
-
+router.get(
+  "/vocabularies/review/stats",
+  authenticate,
+  vocabularyReviewController.getStats,
+);
 router.post(
-    "/vocabularies/review/submit",
-    authenticate,
-    validate(reviewSubmitSchema),
-    vocabularyReviewController.submitResults
+  "/vocabularies/review/sessions",
+  authenticate,
+  validate(createReviewSessionSchema),
+  vocabularyReviewController.createSession,
 );
-
 router.get(
-    "/vocabularies/review/stats",
-    authenticate,
-    vocabularyReviewController.getStats
+  "/vocabularies/review/sessions/:sessionId",
+  authenticate,
+  validateParams(reviewSessionParamsSchema),
+  vocabularyReviewController.getSession,
 );
-
+router.post(
+  "/vocabularies/review/sessions/:sessionId/answers",
+  authenticate,
+  validateParams(reviewSessionParamsSchema),
+  validate(submitReviewAnswerSchema),
+  vocabularyReviewController.answer,
+);
+router.post(
+  "/vocabularies/review/sessions/:sessionId/complete",
+  authenticate,
+  validateParams(reviewSessionParamsSchema),
+  vocabularyReviewController.complete,
+);
+router.post(
+  "/vocabularies/review/sessions/:sessionId/exit",
+  authenticate,
+  validateParams(reviewSessionParamsSchema),
+  validate(exitReviewSessionSchema),
+  vocabularyReviewController.exit,
+);
+router.patch(
+  "/vocabularies/:vocabularyId/bookmark",
+  authenticate,
+  validateParams(reviewBookmarkParamsSchema),
+  validate(bookmarkReviewSchema),
+  vocabularyReviewController.bookmark,
+);
+router.put(
+  "/vocabularies/review/goal",
+  authenticate,
+  validate(reviewGoalSchema),
+  vocabularyReviewController.setGoal,
+);
 export default router;

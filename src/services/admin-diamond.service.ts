@@ -313,8 +313,16 @@ export class AdminDiamondService {
                 reviewCount: uv.reviewCount,
                 correctCount: uv.correctCount,
                 incorrectCount: uv.incorrectCount,
+                correctStreak: uv.correctStreak ?? 0,
+                lapseCount: uv.lapseCount ?? 0,
+                averageResponseTimeMs: uv.averageResponseTimeMs ?? 0,
+                lastQuestionType: uv.lastQuestionType ?? null,
+                lastAnswerQuality: uv.lastAnswerQuality ?? null,
+                isBookmarked: uv.isBookmarked ?? false,
+                excludedFromReview: uv.excludedFromReview ?? false,
                 learnedAt: uv.learnedAt,
                 lastReviewedAt: uv.lastReviewedAt,
+                nextReviewAt: uv.nextReviewAt ?? null,
             };
         });
 

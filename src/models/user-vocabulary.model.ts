@@ -12,6 +12,12 @@ export interface UserVocabularyPersistence {
     reviewCount: number;
     correctCount: number;
     incorrectCount: number;
+    correctStreak: number;
+    lapseCount: number;
+    averageResponseTimeMs: number;
+    lastQuestionType?: string;
+    lastAnswerQuality?: string;
+    isBookmarked: boolean;
     excludedFromReview: boolean;
     learnedAt: Date;
     lastReviewedAt: Date | null;
@@ -33,6 +39,12 @@ const userVocabularySchema = new Schema<UserVocabularyPersistence>(
         reviewCount: { type: Number, required: true, default: 0, min: 0 },
         correctCount: { type: Number, required: true, default: 0, min: 0 },
         incorrectCount: { type: Number, required: true, default: 0, min: 0 },
+        correctStreak: { type: Number, required: true, default: 0, min: 0 },
+        lapseCount: { type: Number, required: true, default: 0, min: 0 },
+        averageResponseTimeMs: { type: Number, required: true, default: 0, min: 0 },
+        lastQuestionType: { type: String, required: false },
+        lastAnswerQuality: { type: String, required: false },
+        isBookmarked: { type: Boolean, default: false },
         excludedFromReview: { type: Boolean, default: false },
         learnedAt: { type: Date, required: true, default: Date.now },
         lastReviewedAt: { type: Date, default: null },

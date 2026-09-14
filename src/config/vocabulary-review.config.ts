@@ -1,0 +1,25 @@
+export const REVIEW_CONFIG = {
+  intervalsInDays: [0, 1, 3, 7, 14, 30] as const,
+  retryDelayQuestions: 3,
+  sessionExpiryHours: 24,
+  xpBase: 5,
+  xpPerFirstAttemptCorrect: 1,
+  maxSessionXp: 20,
+  defaultResponseMs: {
+    WORD_TO_MEANING: 8_000,
+    MEANING_TO_WORD: 9_000,
+    LISTENING_TO_WORD: 12_000,
+    TYPING_WORD: 15_000,
+    FILL_IN_BLANK: 16_000,
+  },
+  priority: {
+    neverReviewed: 40,
+    overduePerDay: 3,
+    overdueMax: 30,
+    incorrectRatioMax: 25,
+    lowMasteryMax: 20,
+    lapseMax: 15,
+    slowRecallMax: 10,
+    bookmark: 5,
+  },
+} as const;
