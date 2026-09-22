@@ -47,6 +47,9 @@ app.use(
 
 app.use(helmet());
 
+// Mount before express.json so HMAC verification receives the original bytes.
+app.post("/api/v1/payments/sepay/webhook",
+    express.raw({ type: "application/json", limit: "64kb", inflate: false }), paymentController.sepayWebhook);
 app.use(express.json());
 
 app.get("/api/v1/health", (_req, res) => {

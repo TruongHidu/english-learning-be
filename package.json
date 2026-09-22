@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "check:payment-provider-index": "tsx src/scripts/migrate-payment-provider-index.ts",
+    "migrate:payment-provider-index": "tsx src/scripts/migrate-payment-provider-index.ts --apply",
     "seed": "tsx src/seed.ts",
     "check:payment-pending": "tsx src/scripts/migrate-payment-pending.ts",
     "migrate:payment-pending": "tsx src/scripts/migrate-payment-pending.ts --apply",

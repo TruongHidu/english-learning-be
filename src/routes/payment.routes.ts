@@ -1,4 +1,4 @@
-import { Router, type RequestHandler } from "express";
+import { Router, raw, type RequestHandler } from "express";
 import type { PaymentController } from "../controllers/payment.controller.js";
 import { authorize } from "../middlewares/authorize.middleware.js";
 import { validate, validateParams, validateQuery } from "../middlewares/validate.middleware.js";
@@ -8,6 +8,8 @@ export function createPaymentRouter(controller: PaymentController, authenticate:
     const router = Router();
     router.get("/vnpay/return", controller.returnUrl);
     const userOnly = [authenticate, authorize("USER")];
+    router.post("/sepay/checkout", ...userOnly, validate(paymentCheckoutSchema), controller.checkoutSepay);
+    router.post("/sepay/webhook", raw({ type: "application/json", limit: "64kb", inflate: false }), controller.sepayWebhook);
     router.post("/vnpay/checkout", ...userOnly, validate(paymentCheckoutSchema), controller.checkout);
     router.get("/me", ...userOnly, validateQuery(paymentHistorySchema), controller.history);
     router.get("/pending", ...userOnly, controller.pending);

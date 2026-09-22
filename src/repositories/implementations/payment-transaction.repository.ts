@@ -80,7 +80,7 @@ export class PaymentTransactionRepository implements IPaymentTransactionReposito
         try {
             const res = await session.withTransaction(async () => {
                 const updated = await PaymentTransactionModel.findOneAndUpdate(
-                    { _id: payment.id, status: confirmation.status === "SUCCESS" ?
+                    { _id: payment.id, paymentMethod: payment.paymentMethod, status: confirmation.status === "SUCCESS" ?
                         { $in: ["PENDING", "CANCELLED", "EXPIRED"] } : "PENDING" },
                     { $set: confirmation }, { session, returnDocument: "after", runValidators: true },
                 ).exec();
