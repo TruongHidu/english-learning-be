@@ -80,7 +80,10 @@ export class PaymentService {
 
     async sepayWebhook(rawBody: unknown, signature: unknown, timestamp: unknown): Promise<void> {
         const payload = this.sepay.verifyWebhook(rawBody, signature, timestamp, this.now());
-        if (payload.transferType !== "in" || payload.accountNumber !== this.sepay.config().SEPAY_ACCOUNT_NUMBER || !payload.code) return;
+        const sepayConfig = this.sepay.config();
+        const accountMatches = payload.accountNumber === sepayConfig.SEPAY_ACCOUNT_NUMBER;
+        const vaMatches = !sepayConfig.SEPAY_VA_NUMBER || payload.subAccount === sepayConfig.SEPAY_VA_NUMBER;
+        if (payload.transferType !== "in" || !accountMatches || !vaMatches || !payload.code) return;
         const payment = await this.payments.findByCode(payload.code);
         if (!payment || payment.paymentMethod !== "SEPAY" || payment.currency !== "VND" ||
             payment.amount !== payload.transferAmount || !["PENDING", "EXPIRED", "CANCELLED"].includes(payment.status)) return;

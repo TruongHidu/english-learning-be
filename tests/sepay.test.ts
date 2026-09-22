@@ -16,7 +16,7 @@ import type { IDiamondPackageRepository } from "../src/repositories/interfaces/d
 import type { IUserRepository } from "../src/repositories/interfaces/user.repository.interface.js";
 import type { Payment } from "../src/types/payment.types.js";
 
-const env = { SEPAY_BANK_CODE: "Vietcombank", SEPAY_ACCOUNT_NUMBER: "0012345678",
+const env = { SEPAY_BANK_CODE: "BIDV", SEPAY_ACCOUNT_NUMBER: "0012345678", SEPAY_VA_NUMBER: "VA123456789",
     SEPAY_ACCOUNT_NAME: "NGUYỄN A + B & C", SEPAY_WEBHOOK_SECRET: "sepay-test-secret-only-32-characters-long" };
 const config = getSepayConfig(env);
 const gateway = new SepayGateway(() => config);
@@ -65,7 +65,7 @@ function fixture() {
         new VnpayGateway(() => vnpConfig), () => vnpConfig, () => now, gateway);
     const payload = (overrides: Record<string, unknown> = {}) => ({
         id: 92704, gateway: config.SEPAY_BANK_CODE, transactionDate: "2026-09-22 12:00:00",
-        accountNumber: config.SEPAY_ACCOUNT_NUMBER, subAccount: "", code: rows[0]?.transactionCode,
+        accountNumber: config.SEPAY_ACCOUNT_NUMBER, subAccount: config.SEPAY_VA_NUMBER, code: rows[0]?.transactionCode,
         content: "Thanh toán kim cương", transferType: "in", description: "", transferAmount: 19000,
         accumulated: 100000, referenceCode: "FT123", ...overrides,
     });
@@ -80,7 +80,9 @@ function fixture() {
 test("SePay config validates without exposing secrets; dates use Vietnam timezone", () => {
     assert.equal(config.SEPAY_EXPIRE_MINUTES, 15);
     assert.equal(config.SEPAY_PAYMENT_CODE_PREFIX, "EL");
-    for (const change of [{ SEPAY_BANK_CODE: " " }, { SEPAY_ACCOUNT_NUMBER: "" }, { SEPAY_WEBHOOK_SECRET: "DO_NOT_EXPOSE" },
+    assert.equal(getSepayConfig({ ...env, SEPAY_VA_NUMBER: "" }).SEPAY_VA_NUMBER, undefined);
+    for (const change of [{ SEPAY_BANK_CODE: " " }, { SEPAY_ACCOUNT_NUMBER: "" },
+        { SEPAY_WEBHOOK_SECRET: "DO_NOT_EXPOSE" },
         { SEPAY_PAYMENT_CODE_PREFIX: "el" }, { SEPAY_PAYMENT_CODE_PREFIX: "ABCDEF" }, { SEPAY_EXPIRE_MINUTES: "0" }, { SEPAY_EXPIRE_MINUTES: "1.5" }]) {
         assert.throws(() => getSepayConfig({ ...env, ...change }), error => error instanceof Error && !error.message.includes("DO_NOT_EXPOSE"));
     }
@@ -96,7 +98,7 @@ test("SePay checkout uses snapshots, bounded code and correctly encoded QR", asy
     assert.equal(f.rows[0]!.diamondAmount, 120);
     const url = new URL(result.qrUrl);
     assert.equal(url.origin + url.pathname, "https://vietqr.app/img");
-    assert.deepEqual(Object.fromEntries(url.searchParams), { acc: env.SEPAY_ACCOUNT_NUMBER, bank: env.SEPAY_BANK_CODE,
+    assert.deepEqual(Object.fromEntries(url.searchParams), { acc: env.SEPAY_VA_NUMBER, bank: env.SEPAY_BANK_CODE,
         amount: "19000", des: result.transactionCode, template: "compact", showinfo: "true", holder: env.SEPAY_ACCOUNT_NAME });
     assert.equal(JSON.stringify(result).includes(config.SEPAY_WEBHOOK_SECRET), false);
     await assert.rejects(f.start, { code: "PAYMENT_PENDING_EXISTS" });
@@ -139,9 +141,10 @@ test("SePay validates payload, rejects malformed JSON and unsafe money/id/date",
     assert.equal(f.balance(), 10);
 });
 
-test("SePay ignores outgoing, mismatched account, amount, code and provider", async () => {
+test("SePay ignores outgoing, mismatched main account/VA, amount, code and provider", async () => {
     const f = fixture(); await f.start();
-    for (const change of [{ transferType: "out" }, { accountNumber: "other" }, { transferAmount: 1 },
+    for (const change of [{ transferType: "out" }, { accountNumber: "other" }, { subAccount: "other" },
+        { subAccount: "" }, { transferAmount: 1 },
         { code: "ELUNKNOWN" }, { code: null }, { code: "" }]) await f.deliver(change);
     f.rows[0]!.paymentMethod = "VNPAY"; await f.deliver();
     assert.equal(f.balance(), 10); assert.equal(f.rows[0]!.status, "PENDING");
@@ -153,7 +156,7 @@ test("SePay valid webhook uses diamond snapshot, metadata and credits once on re
     await Promise.all(Array.from({ length: 6 }, () => f.deliver())); await f.deliver();
     assert.equal(f.balance(), 130); assert.equal(f.ledger(), 1);
     assert.equal(f.rows[0]!.status, "SUCCESS"); assert.equal(f.rows[0]!.providerTransactionId, "92704");
-    assert.equal(f.rows[0]!.referenceCode, "FT123"); assert.equal(f.rows[0]!.bankCode, "Vietcombank");
+    assert.equal(f.rows[0]!.referenceCode, "FT123"); assert.equal(f.rows[0]!.bankCode, config.SEPAY_BANK_CODE);
     assert.equal(f.rows[0]!.paidAt!.toISOString(), "2026-09-22T05:00:00.000Z");
     await f.deliver({ transferType: "out" }); assert.equal(f.rows[0]!.status, "SUCCESS");
 });
@@ -212,7 +215,8 @@ test("SePay HTTP checkout protected; public raw webhook responds exactly and ret
         return fetch(base + "/sepay/webhook", { method: "POST", headers: { "Content-Type": "application/json",
             "X-SePay-Timestamp": s.timestamp, "X-SePay-Signature": s.signature }, body });
     };
-    for (const change of [{ code: "unknown" }, { transferAmount: 1 }, { accountNumber: "wrong" }, { transferType: "out" }]) {
+    for (const change of [{ code: "unknown" }, { transferAmount: 1 }, { accountNumber: "wrong" },
+        { subAccount: "wrong" }, { transferType: "out" }]) {
         const response = await deliverHttp(change); assert.equal(response.status, 200); assert.deepEqual(await response.json(), { success: true });
     }
     const confirm = f.repository.confirm;

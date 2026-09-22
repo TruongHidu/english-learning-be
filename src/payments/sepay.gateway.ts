@@ -32,9 +32,10 @@ export class SepayGateway {
 
     checkoutDetails(payment: Pick<Payment, "id" | "transactionCode" | "amount" | "currency" | "status" | "expiresAt">) {
         const config = this.config();
+        const receivingAccountNumber = config.SEPAY_VA_NUMBER ?? config.SEPAY_ACCOUNT_NUMBER;
         const url = new URL("https://vietqr.app/img");
         url.search = new URLSearchParams({
-            acc: config.SEPAY_ACCOUNT_NUMBER, bank: config.SEPAY_BANK_CODE,
+            acc: receivingAccountNumber, bank: config.SEPAY_BANK_CODE,
             amount: String(payment.amount), des: payment.transactionCode,
             template: "compact", showinfo: "true",
             ...(config.SEPAY_ACCOUNT_NAME ? { holder: config.SEPAY_ACCOUNT_NAME } : {}),
@@ -43,7 +44,7 @@ export class SepayGateway {
             paymentId: payment.id, transactionCode: payment.transactionCode, paymentMethod: "SEPAY" as const,
             status: payment.status, amount: payment.amount, currency: payment.currency,
             qrUrl: url.toString(), bankCode: config.SEPAY_BANK_CODE,
-            accountNumber: config.SEPAY_ACCOUNT_NUMBER, accountName: config.SEPAY_ACCOUNT_NAME,
+            accountNumber: receivingAccountNumber, accountName: config.SEPAY_ACCOUNT_NAME,
             transferContent: payment.transactionCode, expiresAt: payment.expiresAt.toISOString(),
         };
     }

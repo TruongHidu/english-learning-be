@@ -9,8 +9,9 @@ Mỗi user chỉ có một payment PENDING, tính chung cả hai phương thức
 Điền các biến môi trường trên server (xem `.env.example`):
 
 ```dotenv
-SEPAY_BANK_CODE=Vietcombank
+SEPAY_BANK_CODE=BIDV
 SEPAY_ACCOUNT_NUMBER=YOUR_ACCOUNT_NUMBER
+SEPAY_VA_NUMBER=YOUR_VIRTUAL_ACCOUNT_NUMBER
 SEPAY_ACCOUNT_NAME=YOUR_ACCOUNT_NAME
 SEPAY_WEBHOOK_SECRET=YOUR_RANDOM_SECRET_AT_LEAST_32_CHARACTERS
 SEPAY_PAYMENT_CODE_PREFIX=EL
@@ -19,7 +20,10 @@ SEPAY_EXPIRE_MINUTES=15
 
 Secret phải có 32–512 ký tự, nên sinh ngẫu nhiên và dùng đúng cùng giá trị trong
 Dashboard. Không commit secret vào Git, không gửi secret xuống frontend.
-Tên tài khoản có thể để trống; ngân hàng và số tài khoản là bắt buộc.
+Tên tài khoản có thể để trống; ngân hàng và số tài khoản chính là bắt buộc.
+`SEPAY_VA_NUMBER` để trống với ngân hàng không dùng VA. Với BIDV, điền số VA:
+QR sẽ nhận tiền vào VA, còn webhook phải đồng thời có `accountNumber` khớp tài
+khoản chính và `subAccount` khớp VA.
 Prefix gồm 2–5 chữ cái in hoa. Hạn thanh toán từ 1 đến 60 phút.
 Config chỉ được kiểm tra khi gọi SePay; thiếu config không chặn API khác hoặc VNPay.
 
@@ -67,10 +71,10 @@ trước khi đưa SePay vào sử dụng: index cũ còn tồn tại sẽ chặ
 6. Chọn **HMAC-SHA256**, nhập cùng secret với `SEPAY_WEBHOOK_SECRET`.
 7. Cấu hình cảnh báo lỗi webhook và đồng bộ thời gian server.
 
-Luồng này tạo QR dùng số tài khoản gốc và nội dung là mã payment. Chọn tài khoản
-ngân hàng phù hợp. Một số loại liên kết ngân hàng yêu cầu VA hoặc nội dung riêng;
-cần đối chiếu [quy tắc QR theo ngân hàng](https://developer.sepay.vn/vi/tien-ich-khac/tao-qr-code)
-trước khi bật live. Backend hiện chưa thêm VA/TKP hoặc chuỗi nội dung đặc thù.
+Luồng này tạo QR bằng `SEPAY_VA_NUMBER` khi được cấu hình, nếu không sẽ dùng số
+tài khoản chính; nội dung là mã payment. Với BIDV, chọn đúng VA trong cấu hình tài
+khoản của webhook. Backend kiểm tra cả tài khoản chính và VA để một VA khác không
+thể xác nhận payment. Đối chiếu thêm [quy tắc QR theo ngân hàng](https://developer.sepay.vn/vi/tien-ich-khac/tao-qr-code).
 
 ## API và frontend
 
@@ -137,7 +141,7 @@ Chữ ký là HMAC-SHA256 của `timestamp + '.' + raw bytes`; so sánh bằng
 `timingSafeEqual`; timestamp phải trong ±300 giây. Thời gian giao dịch ngân hàng
 `transactionDate` được hiểu là giờ Việt Nam, khác với timestamp của lần gửi webhook.
 
-Chỉ tiền vào đúng tài khoản, đúng mã, đúng số tiền nguyên VND và payment SEPAY
+Chỉ tiền vào đúng tài khoản chính, đúng VA (nếu cấu hình), đúng mã, đúng số tiền nguyên VND và payment SEPAY
 mới được cộng kim cương. Giá và kim cương lấy từ snapshot đã lưu.
 `providerTransactionId = String(payload.id)`, lưu thêm bankCode, referenceCode,
 transactionDate và paidAt. Không ghi raw payload/secret vào log.

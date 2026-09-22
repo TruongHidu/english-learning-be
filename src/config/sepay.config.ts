@@ -1,9 +1,17 @@
 import { z } from "zod";
 import { AppError } from "../errors/app-error.js";
 
+const optionalAccountNumber = z.preprocess(
+    value => typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().trim().min(1).max(100).optional(),
+);
+
 const schema = z.object({
     SEPAY_BANK_CODE: z.string().trim().min(1).max(100),
     SEPAY_ACCOUNT_NUMBER: z.string().trim().min(1).max(100),
+    // Official VA banks (including BIDV) expose the receiving VA in
+    // webhook.subAccount while webhook.accountNumber remains the linked account.
+    SEPAY_VA_NUMBER: optionalAccountNumber,
     SEPAY_ACCOUNT_NAME: z.string().trim().max(200).default(""),
     SEPAY_WEBHOOK_SECRET: z.string().min(32).max(512).refine(value => value.trim().length >= 32),
     SEPAY_PAYMENT_CODE_PREFIX: z.string().regex(/^[A-Z]{2,5}$/).default("EL"),

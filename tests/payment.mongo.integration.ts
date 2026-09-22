@@ -32,7 +32,8 @@ const config = getVnpayConfig({ VNPAY_TMN_CODE: "TEST0001", VNPAY_HASH_SECRET: "
 const repository = new PaymentTransactionRepository();
 const packages = new DiamondPackageRepository();
 const service = new PaymentService(repository, packages, new UserRepository(), new VnpayGateway(() => config), () => config);
-const sepayConfig = getSepayConfig({ SEPAY_BANK_CODE: "Vietcombank", SEPAY_ACCOUNT_NUMBER: "0012345678",
+const sepayConfig = getSepayConfig({ SEPAY_BANK_CODE: "BIDV", SEPAY_ACCOUNT_NUMBER: "0012345678",
+    SEPAY_VA_NUMBER: "VA123456789",
     SEPAY_WEBHOOK_SECRET: "sepay-integration-test-secret-32-characters" });
 const sepayService = new PaymentService(repository, packages, new UserRepository(), new VnpayGateway(() => config),
     () => config, () => new Date(), new SepayGateway(() => sepayConfig));
@@ -46,7 +47,8 @@ async function sepayFixture() {
     const id = Number.parseInt(randomBytes(6).toString("hex"), 16);
     const deliver = async (providerId = id) => {
         const timestamp = String(Math.floor(Date.now() / 1000));
-        const body = Buffer.from(JSON.stringify({ id: providerId, gateway: "Vietcombank", accountNumber: "0012345678",
+        const body = Buffer.from(JSON.stringify({ id: providerId, gateway: "BIDV", accountNumber: "0012345678",
+            subAccount: "VA123456789",
             code: payment.transactionCode, transferType: "in", transferAmount: 19000, content: payment.transactionCode,
             transactionDate: "2026-09-22 12:00:00", referenceCode: "FT-INTEGRATION" }));
         const signature = "sha256=" + createHmac("sha256", sepayConfig.SEPAY_WEBHOOK_SECRET).update(timestamp + ".").update(body).digest("hex");
