@@ -18,7 +18,7 @@ const schema = new Schema<PaymentPersistence>({
     diamondAmount: integer(1),
     amount: integer(5000, 9_999_999_999),
     currency: { type: String, enum: ["VND"], required: true },
-    paymentMethod: { type: String, enum: ["VNPAY"], required: true },
+    paymentMethod: { type: String, enum: ["VNPAY", "SEPAY"], required: true },
     status: { type: String, enum: PAYMENT_STATUSES, default: "PENDING", required: true },
     transactionCode: { type: String, required: true, unique: true, match: /^[a-zA-Z0-9]{1,100}$/ },
     providerTransactionId: String,
@@ -28,10 +28,13 @@ const schema = new Schema<PaymentPersistence>({
     cardType: String,
     payDate: String,
     paidAt: Date,
+    referenceCode: String,
+    transactionDate: String,
     expiresAt: { type: Date, required: true },
     retryVersion: { type: Number, default: 0 },
 }, { timestamps: true, versionKey: false });
-schema.index({ providerTransactionId: 1 }, { unique: true, partialFilterExpression: { providerTransactionId: { $type: "string" } } });
+schema.index({ paymentMethod: 1, providerTransactionId: 1 }, { name: "uniq_payment_provider_transaction", unique: true,
+    partialFilterExpression: { providerTransactionId: { $type: "string" } } });
 schema.index({ userId: 1, createdAt: -1, _id: -1 });
 schema.index({ status: 1, createdAt: -1 });
 schema.index({ status: 1, expiresAt: 1 });

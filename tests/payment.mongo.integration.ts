@@ -20,6 +20,8 @@ import { UserRepository } from "../src/repositories/implementations/user.reposit
 import { PaymentService } from "../src/services/payment.service.js";
 import { getVnpayConfig } from "../src/config/vnpay.config.js";
 import { canonicalVnpayQuery, VnpayGateway } from "../src/payments/vnpay.gateway.js";
+import { getSepayConfig } from "../src/config/sepay.config.js";
+import { SepayGateway } from "../src/payments/sepay.gateway.js";
 
 // Starts a NEW local replica set. Never reads .env or connects to the user's database.
 let mongod: ChildProcess | undefined;
@@ -30,6 +32,103 @@ const config = getVnpayConfig({ VNPAY_TMN_CODE: "TEST0001", VNPAY_HASH_SECRET: "
 const repository = new PaymentTransactionRepository();
 const packages = new DiamondPackageRepository();
 const service = new PaymentService(repository, packages, new UserRepository(), new VnpayGateway(() => config), () => config);
+const sepayConfig = getSepayConfig({ SEPAY_BANK_CODE: "Vietcombank", SEPAY_ACCOUNT_NUMBER: "0012345678",
+    SEPAY_WEBHOOK_SECRET: "sepay-integration-test-secret-32-characters" });
+const sepayService = new PaymentService(repository, packages, new UserRepository(), new VnpayGateway(() => config),
+    () => config, () => new Date(), new SepayGateway(() => sepayConfig));
+
+async function sepayFixture() {
+    const unique = randomBytes(8).toString("hex");
+    const user = await UserModel.create({ email: `${unique}@example.test`, displayName: "SePay test", stats: { diamond: 10 } });
+    const pkg = await packages.create({ code: unique, name: "SePay test", diamondAmount: 100, bonusDiamond: 20, price: 19000 });
+    const checkout = await sepayService.checkoutSepay(user.id, pkg.id);
+    const payment = (await repository.findByCode(checkout.transactionCode))!;
+    const id = Number.parseInt(randomBytes(6).toString("hex"), 16);
+    const deliver = async (providerId = id) => {
+        const timestamp = String(Math.floor(Date.now() / 1000));
+        const body = Buffer.from(JSON.stringify({ id: providerId, gateway: "Vietcombank", accountNumber: "0012345678",
+            code: payment.transactionCode, transferType: "in", transferAmount: 19000, content: payment.transactionCode,
+            transactionDate: "2026-09-22 12:00:00", referenceCode: "FT-INTEGRATION" }));
+        const signature = "sha256=" + createHmac("sha256", sepayConfig.SEPAY_WEBHOOK_SECRET).update(timestamp + ".").update(body).digest("hex");
+        await sepayService.sepayWebhook(body, signature, timestamp);
+    };
+    return { user, pkg, payment, deliver, id };
+}
+
+test("SePay real replica set: concurrent replay credits one snapshot and stores metadata", async () => {
+    const f = await sepayFixture();
+    await packages.update(f.pkg.id, { price: 99000, diamondAmount: 999 });
+    await packages.delete(f.pkg.id);
+    await Promise.all(Array.from({ length: 8 }, () => f.deliver()));
+    await f.deliver();
+    assert.equal((await UserModel.findById(f.user._id))!.stats.diamond, 130);
+    assert.equal(await DiamondTransactionModel.countDocuments({ referenceId: f.payment.id }), 1);
+    const saved = (await repository.findByCode(f.payment.transactionCode))!;
+    assert.equal(saved.status, "SUCCESS"); assert.equal(saved.providerTransactionId, String(f.id));
+    assert.equal(saved.referenceCode, "FT-INTEGRATION"); assert.equal(saved.transactionDate, "2026-09-22 12:00:00");
+    assert.equal(saved.paidAt!.toISOString(), "2026-09-22T05:00:00.000Z");
+});
+
+test("SePay real replica set: failed wallet transaction rolls back and webhook retry recovers", async () => {
+    const f = await sepayFixture(), original = f.user.toObject();
+    await UserModel.deleteOne({ _id: f.user._id });
+    await assert.rejects(f.deliver);
+    assert.equal((await repository.findByCode(f.payment.transactionCode))!.status, "PENDING");
+    assert.equal((await repository.findByCode(f.payment.transactionCode))!.providerTransactionId, undefined);
+    assert.equal(await DiamondTransactionModel.countDocuments({ referenceId: f.payment.id }), 0);
+    await UserModel.create(original); await f.deliver();
+    assert.equal((await UserModel.findById(f.user._id))!.stats.diamond, 130);
+});
+
+test("SePay compound index permits same VNPay id but rejects reuse by another SePay payment", async () => {
+    const vnp = await fixture(), first = await sepayFixture(), second = await sepayFixture();
+    const id = 876543210123;
+    assert.equal(new URL(await service.returnUrl(vnp.callback({ vnp_TransactionNo: String(id) }))).searchParams.get("returnResult"), "processed");
+    await first.deliver(id);
+    await assert.rejects(() => second.deliver(id), { code: 11000 });
+    assert.equal((await UserModel.findById(first.user._id))!.stats.diamond, 130);
+    assert.equal((await UserModel.findById(second.user._id))!.stats.diamond, 10);
+    assert.equal((await repository.findByCode(second.payment.transactionCode))!.status, "PENDING");
+    assert.equal(await DiamondTransactionModel.countDocuments({ referenceId: second.payment.id }), 0);
+});
+
+test("SePay real replica set: late cancelled/expired success and retry races credit once", async () => {
+    for (const expired of [true, false]) {
+        const f = await sepayFixture();
+        if (expired) await repository.expirePendingByUser(f.user.id, f.payment.expiresAt);
+        else await sepayService.cancel(f.user.id, f.payment.id);
+        const next = await sepayService.checkoutSepay(f.user.id, f.pkg.id);
+        await Promise.all(Array.from({ length: 4 }, () => f.deliver()));
+        assert.equal((await UserModel.findById(f.user._id))!.stats.diamond, 130);
+        assert.equal(await DiamondTransactionModel.countDocuments({ referenceId: f.payment.id }), 1);
+        assert.equal((await sepayService.getPayment(f.user.id, next.paymentId)).status, "PENDING");
+    }
+    const f = await sepayFixture();
+    await Promise.allSettled([f.deliver(), sepayService.cancel(f.user.id, f.payment.id), sepayService.retry(f.user.id, f.payment.id, "127.0.0.1")]);
+    await f.deliver();
+    assert.equal((await UserModel.findById(f.user._id))!.stats.diamond, 130);
+    assert.equal(await DiamondTransactionModel.countDocuments({ referenceId: f.payment.id }), 1);
+});
+
+test("provider index migration dry-run preserves old index; apply is idempotent and preserves documents", async () => {
+    const collection = mongoose.connection.getClient().db("provider_migration_test").collection("paymenttransactions");
+    await collection.insertMany([{ paymentMethod: "VNPAY", providerTransactionId: "123", status: "SUCCESS" },
+        { paymentMethod: "VNPAY", status: "PENDING" }]);
+    await collection.createIndex({ providerTransactionId: 1 }, { unique: true, partialFilterExpression: { providerTransactionId: { $type: "string" } } });
+    const before = await collection.find().toArray();
+    const script = fileURLToPath(new URL("../src/scripts/migrate-payment-provider-index.js", import.meta.url));
+    const run = (apply: boolean) => promisify(execFile)(process.execPath, [script, ...(apply ? ["--apply"] : [])], {
+        env: { ...process.env, MONGODB_URI: testUri.replace("/payment_integration?", "/provider_migration_test?") }, windowsHide: true,
+    });
+    await run(false);
+    assert.ok((await collection.indexes()).some(index => index.name === "providerTransactionId_1"));
+    assert.ok(!(await collection.indexes()).some(index => index.name === "uniq_payment_provider_transaction"));
+    await run(true); await run(true);
+    assert.deepEqual(await collection.find().toArray(), before);
+    assert.ok(!(await collection.indexes()).some(index => index.name === "providerTransactionId_1"));
+    await collection.insertOne({ paymentMethod: "SEPAY", providerTransactionId: "123" });
+    await assert.rejects(() => collection.insertOne({ paymentMethod: "SEPAY", providerTransactionId: "123" }), { code: 11000 });
+});
 
 before(async () => {
     assert.ok(process.env.TEST_MONGOD_PATH, "Set TEST_MONGOD_PATH to the local mongod executable");

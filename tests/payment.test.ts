@@ -325,6 +325,7 @@ test("retry renews from each server time using snapshot and preserves the histor
         assert.equal(retry.paymentId, checkout.paymentId);
         assert.equal(retry.transactionCode, checkout.transactionCode);
         assert.equal(retry.expiresAt, new Date(now.getTime() + 600_000).toISOString());
+        assert.ok("paymentUrl" in retry, "VNPay retry must return a payment URL");
         const url = new URL(retry.paymentUrl);
         assert.equal(url.searchParams.get("vnp_Amount"), "1900000");
         assert.equal(url.searchParams.get("vnp_CreateDate"), formatVnpayDate(now));

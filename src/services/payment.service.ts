@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { VnpayConfig } from "../config/vnpay.config.js";
 import { AppError } from "../errors/app-error.js";
 import type { PaymentGateway } from "../payments/payment-gateway.interface.js";
+import { SepayGateway, parseSepayDate } from "../payments/sepay.gateway.js";
 import { parseVnpayDate } from "../payments/vnpay.gateway.js";
 import type { IPaymentTransactionRepository } from "../repositories/interfaces/payment-transaction.repository.interface.js";
 import type { IDiamondPackageRepository } from "../repositories/interfaces/diamond-package.repository.interface.js";
@@ -27,10 +28,31 @@ export class PaymentService {
         private readonly gateway: PaymentGateway,
         private readonly config: () => VnpayConfig,
         private readonly now: () => Date = () => new Date(),
+        private readonly sepay: SepayGateway = new SepayGateway(),
     ) {}
 
     async checkout(userId: string, packageId: string, ipAddress: string) {
         const config = this.config();
+        const createdAt = this.now();
+        const payment = await this.createPayment(userId, packageId, "VNPAY",
+            `PAY${randomBytes(16).toString("hex")}`, new Date(createdAt.getTime() + config.VNPAY_EXPIRE_MINUTES * 60_000));
+        const paymentUrl = this.gateway.createPaymentUrl({ ...payment, createdAt, ipAddress });
+        return {
+            paymentId: payment.id, transactionCode: payment.transactionCode,
+            status: payment.status, paymentUrl, expiresAt: payment.expiresAt.toISOString(),
+        };
+    }
+
+    async checkoutSepay(userId: string, packageId: string) {
+        const config = this.sepay.config();
+        const code = `${config.SEPAY_PAYMENT_CODE_PREFIX}${randomBytes(8).toString("hex").toUpperCase()}`;
+        const expiresAt = new Date(this.now().getTime() + config.SEPAY_EXPIRE_MINUTES * 60_000);
+        const payment = await this.createPayment(userId, packageId, "SEPAY", code, expiresAt);
+        return this.sepay.checkoutDetails(payment);
+    }
+
+    private async createPayment(userId: string, packageId: string, paymentMethod: Payment["paymentMethod"],
+        transactionCode: string, expiresAt: Date) {
         const user = await this.users.findById(userId);
         if (!user || user.status !== "ACTIVE") throw new AppError("ACCOUNT_NOT_ACTIVE", "Tài khoản không thể thanh toán", 403);
         const checkTime = this.now();
@@ -47,20 +69,26 @@ export class PaymentService {
             !Number.isSafeInteger(pkg.bonusDiamond) || pkg.bonusDiamond < 0 || !Number.isSafeInteger(totalDiamond)) {
             throw new AppError("INVALID_PAYMENT_PACKAGE", "Giá hoặc số kim cương không hợp lệ", 400);
         }
-        const createdAt = this.now();
-        const payment = await this.payments.create({
+        return this.payments.create({
             userId, packageId: pkg.id,
             packageCodeSnapshot: pkg.code, packageNameSnapshot: pkg.name,
             baseDiamondSnapshot: pkg.diamondAmount, bonusDiamondSnapshot: pkg.bonusDiamond,
-            diamondAmount: totalDiamond, amount: pkg.price, currency: "VND", paymentMethod: "VNPAY",
-            transactionCode: `PAY${randomBytes(16).toString("hex")}`,
-            expiresAt: new Date(createdAt.getTime() + config.VNPAY_EXPIRE_MINUTES * 60_000),
+            diamondAmount: totalDiamond, amount: pkg.price, currency: "VND", paymentMethod,
+            transactionCode, expiresAt,
         });
-        const paymentUrl = this.gateway.createPaymentUrl({ ...payment, createdAt, ipAddress });
-        return {
-            paymentId: payment.id, transactionCode: payment.transactionCode,
-            status: payment.status, paymentUrl, expiresAt: payment.expiresAt.toISOString(),
-        };
+    }
+
+    async sepayWebhook(rawBody: unknown, signature: unknown, timestamp: unknown): Promise<void> {
+        const payload = this.sepay.verifyWebhook(rawBody, signature, timestamp, this.now());
+        if (payload.transferType !== "in" || payload.accountNumber !== this.sepay.config().SEPAY_ACCOUNT_NUMBER || !payload.code) return;
+        const payment = await this.payments.findByCode(payload.code);
+        if (!payment || payment.paymentMethod !== "SEPAY" || payment.currency !== "VND" ||
+            payment.amount !== payload.transferAmount || !["PENDING", "EXPIRED", "CANCELLED"].includes(payment.status)) return;
+        await this.payments.confirm(payment, {
+            status: "SUCCESS", providerTransactionId: String(payload.id), bankCode: payload.gateway,
+            referenceCode: payload.referenceCode, transactionDate: payload.transactionDate,
+            paidAt: parseSepayDate(payload.transactionDate)!,
+        });
     }
 
     async returnUrl(query: Record<string, unknown>): Promise<string> {
@@ -79,6 +107,7 @@ export class PaymentService {
             if (!code || !/^[a-zA-Z0-9]{1,100}$/.test(code)) return redirect("invalid");
             const payment = await this.payments.findByCode(code);
             if (!payment) return redirect("not_found");
+            if (payment.paymentMethod !== "VNPAY") return redirect("invalid");
             if (!params.vnp_Amount || !/^\d{1,12}$/.test(params.vnp_Amount) || Number(params.vnp_Amount) !== payment.amount * 100) {
                 return redirect("invalid");
             }
@@ -161,6 +190,13 @@ export class PaymentService {
         if (payment.expiresAt <= now) {
             await this.payments.expirePendingByUser(userId, now);
             throw new AppError("PAYMENT_EXPIRED", "Giao dịch đã hết hạn. Vui lòng tạo giao dịch mới.", 409);
+        }
+        if (payment.paymentMethod === "SEPAY") {
+            const expiresAt = new Date(now.getTime() + this.sepay.config().SEPAY_EXPIRE_MINUTES * 60_000);
+            const details = this.sepay.checkoutDetails({ ...payment, expiresAt });
+            const updated = await this.payments.extendPendingPayment(payment, now, expiresAt);
+            if (!updated) throw new AppError("PAYMENT_NOT_PENDING", "Giao dịch vừa thay đổi. Vui lòng tải lại trước khi tiếp tục.", 409);
+            return details;
         }
         const expiresAt = new Date(now.getTime() + this.config().VNPAY_EXPIRE_MINUTES * 60_000);
         // Sign before changing the database; signing failure must not extend the deadline.

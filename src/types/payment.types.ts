@@ -11,7 +11,7 @@ export interface NewPayment {
     diamondAmount: number;
     amount: number;
     currency: "VND";
-    paymentMethod: "VNPAY";
+    paymentMethod: "VNPAY" | "SEPAY";
     transactionCode: string;
     expiresAt: Date;
 }
@@ -27,6 +27,8 @@ export interface Payment extends NewPayment {
     cardType?: string;
     payDate?: string;
     paidAt?: Date;
+    referenceCode?: string;
+    transactionDate?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -34,8 +36,10 @@ export interface Payment extends NewPayment {
 export interface PaymentConfirmation {
     status: "SUCCESS" | "FAILED" | "CANCELLED" | "EXPIRED";
     providerTransactionId?: string;
-    responseCode: string;
-    transactionStatus: string;
+    responseCode?: string;
+    transactionStatus?: string;
+    referenceCode?: string;
+    transactionDate?: string;
     bankCode?: string;
     cardType?: string;
     payDate?: string;
