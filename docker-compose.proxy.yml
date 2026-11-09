@@ -1,0 +1,16 @@
+# Dùng trên VPS: nối container backend vào network của reverse proxy (Caddy của pos-saas)
+# để Caddy gọi được http://english-learning-be:5000. MongoDB KHÔNG nối vào network này.
+#
+# Bật bằng cách thêm vào .env trên VPS:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.proxy.yml
+#   PROXY_NETWORK=pos-saas_default      # tên network của container Caddy
+services:
+  english-learning-be:
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-pos-saas_default}

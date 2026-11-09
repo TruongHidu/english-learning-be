@@ -4,13 +4,14 @@ on:
   push:
     branches:
       - main
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-backend
+  group: backend-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -41,11 +42,12 @@ jobs:
   deploy:
     name: Deploy to VPS
     needs: ci
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
-      - name: Pull, build and restart backend
+      - name: Pull, build and restart Backend container
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
@@ -59,41 +61,28 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-          ssh \
-            -i ~/.ssh/deploy_key \
-            -p "$VPS_PORT" \
-            -o BatchMode=yes \
-            -o StrictHostKeyChecking=yes \
-            "$VPS_USER@$VPS_HOST" 'bash -se' <<'REMOTE'
+          ssh -i ~/.ssh/deploy_key -p "$VPS_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" 'bash -se' <<'REMOTE'
           set -Eeuo pipefail
 
-          export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
-          APP_DIR="/var/www/english-learning/english-learning-be"
-
-          cd "$APP_DIR"
+          cd "/var/www/english-learning/english-learning-be"
           test -f .env
 
           git pull --ff-only origin main
+          docker compose up -d --build --remove-orphans
 
-          npm ci --include=dev
-          npm run build
-          npm prune --omit=dev
+          # Chỉ dọn image cũ của dự án này, không đụng image của pos-saas
+          docker image prune -f --filter label=project=english-learning
 
-          pm2 restart english-learning-be --update-env
-          pm2 save
-
-          for attempt in $(seq 1 15); do
-            if curl --fail --silent --show-error \
-              http://127.0.0.1:5000/api/v1/health; then
-              echo
+          for attempt in $(seq 1 40); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' english-learning-be 2>/dev/null || true)
+            if [ "$status" = healthy ]; then
               echo "Backend deployment succeeded"
               exit 0
             fi
-
-            sleep 2
+            sleep 3
           done
 
-          echo "Backend health check failed"
-          pm2 logs english-learning-be --lines 80 --nostream
+          echo "Backend health check failed (status: $status)"
+          docker compose logs --tail 80 english-learning-be
           exit 1
           REMOTE
